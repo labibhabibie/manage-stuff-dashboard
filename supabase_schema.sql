@@ -41,6 +41,17 @@ CREATE TABLE IF NOT EXISTS public.inspeksi_barang (
   updated_at timestamp with time zone DEFAULT now(),
   updated_by uuid REFERENCES public.profiles(id),
   catatan text,
+  mawb text NOT NULL,
+  hawb text NOT NULL,
+  airline_code text NOT NULL,
+  ori_dest text NOT NULL,
+  jumlah_pieces int2 NOT NULL,
+  agent_code text,
+  consignee_code text,
+  note_handling text,
+  shipper_pic_name text NOT NULL,
+  shipper_pic_number text NOT NULL,
+  foto_samping_url text,
   CONSTRAINT inspeksi_barang_pkey PRIMARY KEY (id)
 );
 

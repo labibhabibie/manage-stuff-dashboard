@@ -38,6 +38,17 @@ export type InspeksiBarang = {
   updated_at: string | null
   updated_by: string | null
   catatan: string | null
+  mawb: string | null               // NEW
+  hawb: string | null               // NEW
+  airline_code: string | null       // NEW
+  ori_dest: string | null           // NEW
+  jumlah_pieces: number | null      // NEW
+  agent_code: string | null         // NEW
+  consignee_code: string | null     // NEW
+  note_handling: string | null      // NEW
+  shipper_pic_name: string | null   // NEW
+  shipper_pic_number: string | null // NEW
+  foto_samping_url: string | null // NEW
   profiles?: Profile
 }
 
