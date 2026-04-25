@@ -31,6 +31,7 @@ export default function DataPage() {
     search: '', logam: false, organik: false, cairan: false, sintetis: false,
     dateFrom: '', dateTo: ''
   })
+  const [selected, setSelected] = useState<string[]>([])
 
   useEffect(() => { fetchData() }, [page, filters])
 
@@ -117,6 +118,9 @@ export default function DataPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+              <button className="btn-primary">
+                Kirim {selected.length} data ke Bea Cukai
+              </button>
             <button onClick={fetchData} className="btn-secondary"><RefreshCw size={14} /></button>
             <button onClick={exportCSV} className="btn-secondary">
               <Download size={14} /> Export CSV
@@ -132,7 +136,7 @@ export default function DataPage() {
               <input
                   type="text"
                   className="input pl-9"
-                  placeholder="Cari ID barang, MAWB, atau HAWB..."
+                  placeholder="Cari No AJU, MAWB, atau HAWB..."
                   value={filters.search}
                   onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(1) }}
               />
@@ -153,27 +157,6 @@ export default function DataPage() {
 
           {showFilters && (
               <div className="pt-3 border-t border-surface-700 space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  <p className="text-xs text-surface-400 w-full font-medium">Filter Tipe:</p>
-                  {[
-                    { key: 'logam', label: 'Logam', icon: Atom, cls: 'badge-logam' },
-                    { key: 'organik', label: 'Organik', icon: Leaf, cls: 'badge-organik' },
-                    { key: 'cairan', label: 'Cairan', icon: Droplets, cls: 'badge-cairan' },
-                    { key: 'sintetis', label: 'Sintetis', icon: Zap, cls: 'badge-sintetis' },
-                  ].map(f => {
-                    const Icon = f.icon
-                    const active = filters[f.key as keyof Filters] as boolean
-                    return (
-                        <button
-                            key={f.key}
-                            onClick={() => { setFilters(prev => ({ ...prev, [f.key]: !prev[f.key as keyof Filters] })); setPage(1) }}
-                            className={`${f.cls} cursor-pointer transition-all ${active ? 'ring-2 ring-white/30' : 'opacity-60 hover:opacity-100'}`}
-                        >
-                          <Icon size={11} />{f.label}
-                        </button>
-                    )
-                  })}
-                </div>
                 <div className="flex gap-3">
                   <div className="flex-1">
                     <label className="label">Dari Tanggal</label>
@@ -186,6 +169,7 @@ export default function DataPage() {
                            onChange={e => { setFilters(f => ({ ...f, dateTo: e.target.value })); setPage(1) }} />
                   </div>
                   <div className="flex items-end">
+                    <button onClick={resetFilters} className="btn-secondary me-2">Set Today</button>
                     <button onClick={resetFilters} className="btn-secondary">Reset</button>
                   </div>
                 </div>
@@ -204,12 +188,19 @@ export default function DataPage() {
                 <table className="w-full text-sm">
                   <thead>
                   <tr className="border-b border-surface-700 bg-surface-900/50">
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">ID Barang</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">MAWB/HAWB</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Airline / Rute</th>
+                    <th className="py-3 px-4">
+                      <input
+                          type="checkbox"
+                          className="rounded border-surface-600 bg-surface-800 text-brand-500 cursor-pointer"
+                          onChange={(e) => setSelected(e.target.checked ? data.map(d => d.id) : [])}
+                          checked={selected.length === data.length && data.length > 0}
+                      />
+                    </th>                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. AJU</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Waktu Masuk</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Tipe Terdeteksi</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Catatan</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. MAWB</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. HAWB</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Rute</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Jumlah Barang</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Aksi</th>
                   </tr>
                   </thead>
@@ -224,12 +215,35 @@ export default function DataPage() {
                   ) : data.map(item => (
                       <tr key={item.id} className="hover:bg-surface-800/40 transition-colors group">
                         <td className="py-3 px-4">
+                          <input
+                              type="checkbox"
+                              className="rounded border-surface-600 bg-surface-800 text-brand-500 cursor-pointer"
+                              checked={selected.includes(item.id)}
+                              onChange={(e) =>
+                                  setSelected(prev =>
+                                      e.target.checked ? [...prev, item.id] : prev.filter(id => id !== item.id)
+                                  )
+                              }
+                          />
+                        </td>
+                        <td className="py-3 px-4">
                           <span className="font-mono text-xs text-brand-400 font-medium">{item.id_barang}</span>
                         </td>
                         <td className="py-3 px-4">
-                      <span className="font-mono text-xs text-surface-200">
-                        {item.mawb || <span className="italic text-surface-600">—</span>} / {item.hawb || <span className="italic text-surface-600">—</span>}
-                      </span>
+                          <div className="flex items-center gap-1.5 text-xs text-surface-300">
+                            {format(new Date(item.waktu_masuk), 'dd/MM/yyyy', { locale: id })}
+                            <span className="font-mono text-surface-500">{format(new Date(item.waktu_masuk), 'HH:mm')}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-mono texttext-surface-200-xs ">
+                            {item.mawb || <span className="italic text-surface-600">—</span>}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-mono texttext-surface-200-xs ">
+                            {item.hawb || <span className="italic text-surface-600">—</span>}
+                          </span>
                         </td>
                         <td className="py-3 px-4">
                           <div className="space-y-0.5">
@@ -239,33 +253,14 @@ export default function DataPage() {
                             {item.ori_dest && (
                                 <p className="text-[10px] text-surface-500 font-mono">{item.ori_dest}</p>
                             )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="text-xs text-surface-400 truncate max-w-[160px] block">
                             {item.jumlah_pieces != null && (
                                 <p className="text-[10px] text-surface-500">{item.jumlah_pieces} pcs</p>
                             )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1.5 text-xs text-surface-300">
-                            <Clock size={11} className="text-surface-500" />
-                            {format(new Date(item.waktu_masuk), 'dd MMM yyyy', { locale: id })}
-                            <span className="font-mono text-surface-500">{format(new Date(item.waktu_masuk), 'HH:mm')}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex gap-1 flex-wrap">
-                            {item.logam && <span className="badge-logam"><Atom size={10} />Logam</span>}
-                            {item.organik && <span className="badge-organik"><Leaf size={10} />Organik</span>}
-                            {item.cairan && <span className="badge-cairan"><Droplets size={10} />Cairan</span>}
-                            {item.sintetis && <span className="badge-sintetis"><Zap size={10} />Sintetis</span>}
-                            {!item.logam && !item.organik && !item.cairan && !item.sintetis && (
-                                <span className="text-xs text-surface-600 italic">Tidak ada</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                      <span className="text-xs text-surface-400 truncate max-w-[160px] block">
-                        {item.catatan || <span className="italic text-surface-600">—</span>}
-                      </span>
+                          </span>
                         </td>
                         <td className="py-3 px-4">
                           <Link
