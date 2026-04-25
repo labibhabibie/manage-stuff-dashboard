@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Search, ChevronLeft, ChevronRight,
-  Atom, Leaf, Droplets, Zap, Eye, Clock, Package,
-  RefreshCw, Download, SlidersHorizontal
+  Eye, Clock, Package,
+  RefreshCw, Download, SlidersHorizontal, Send
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
@@ -13,10 +13,6 @@ const PAGE_SIZE = 20
 
 type Filters = {
   search: string
-  logam: boolean
-  organik: boolean
-  cairan: boolean
-  sintetis: boolean
   dateFrom: string
   dateTo: string
 }
@@ -28,8 +24,7 @@ export default function DataPage() {
   const [total, setTotal] = useState(0)
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<Filters>({
-    search: '', logam: false, organik: false, cairan: false, sintetis: false,
-    dateFrom: '', dateTo: ''
+    search: '', dateFrom: '', dateTo: ''
   })
   const [selected, setSelected] = useState<string[]>([])
 
@@ -39,20 +34,27 @@ export default function DataPage() {
     setLoading(true)
     try {
       let query = supabase
-          .from('inspeksi_barang')
+          .from('inspeksi_barang_v2')
           .select('*', { count: 'exact' })
           .order('created_at', { ascending: false })
           .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
-      if (filters.search) query = query.or(`id_barang.ilike.%${filters.search}%,hawb.ilike.%${filters.search}%,mawb.ilike.%${filters.search}%`)
-      if (filters.logam) query = query.eq('logam', true)
-      if (filters.organik) query = query.eq('organik', true)
-      if (filters.cairan) query = query.eq('cairan', true)
-      if (filters.sintetis) query = query.eq('sintetis', true)
+      if (filters.search)
+        query = query.or(
+            `aju.ilike.%${filters.search}%,mawb.ilike.%${filters.search}%,hawb.ilike.%${filters.search}%`
+        )
       if (filters.dateFrom) query = query.gte('waktu_masuk', filters.dateFrom)
-      if (filters.dateTo) query = query.lte('waktu_masuk', filters.dateTo + 'T23:59:59')
+      if (filters.dateTo)   query = query.lte('waktu_masuk', filters.dateTo + 'T23:59:59')
 
-      const { data: rows, count } = await query
+      const { data: rows, count, error } = await query
+
+      if (error) {
+        console.error('fetchData error:', error.message)
+        setData([])
+        setTotal(0)
+        return
+      }
+
       setData(rows || [])
       setTotal(count || 0)
     } finally {
@@ -63,40 +65,38 @@ export default function DataPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   const resetFilters = () => {
-    setFilters({ search: '', logam: false, organik: false, cairan: false, sintetis: false, dateFrom: '', dateTo: '' })
+    setFilters({ search: '', dateFrom: '', dateTo: '' })
     setPage(1)
   }
 
-  const activeFilterCount = [
-    filters.logam, filters.organik, filters.cairan, filters.sintetis,
-    filters.dateFrom, filters.dateTo
-  ].filter(Boolean).length
+  const setToday = () => {
+    const today = format(new Date(), 'yyyy-MM-dd')
+    setFilters(f => ({ ...f, dateFrom: today, dateTo: today }))
+    setPage(1)
+  }
+
+  const activeFilterCount = [filters.dateFrom, filters.dateTo].filter(Boolean).length
 
   const exportCSV = () => {
     const headers = [
-      'ID Barang', 'HAWB', 'Airline Code', 'Ori/Dest', 'Jumlah Pieces',
-      'Agent Code', 'Consignee Code', 'Waktu Masuk',
-      'Logam', 'Organik', 'Cairan', 'Sintetis',
+      'No AJU', 'MAWB', 'HAWB', 'Tanggal AWB', 'Airline Code',
+      'Ori/Dest', 'Jumlah Pieces', 'Berat (Kg)',
       'Shipper PIC Name', 'Shipper PIC Number',
-      'Note Handling', 'Catatan'
+      'Note Handling', 'Waktu Masuk',
     ]
     const rows = data.map(d => [
-      d.id_barang,
+      d.aju || '',
+      d.mawb || '',
       d.hawb || '',
+      d.tanggal_awb || '',
       d.airline_code || '',
       d.ori_dest || '',
       d.jumlah_pieces ?? '',
-      d.agent_code || '',
-      d.consignee_code || '',
-      format(new Date(d.waktu_masuk), 'dd/MM/yyyy HH:mm'),
-      d.logam ? 'Ya' : 'Tidak',
-      d.organik ? 'Ya' : 'Tidak',
-      d.cairan ? 'Ya' : 'Tidak',
-      d.sintetis ? 'Ya' : 'Tidak',
+      d.weight || '',
       d.shipper_pic_name || '',
       d.shipper_pic_number || '',
       d.note_handling || '',
-      d.catatan || ''
+      format(new Date(d.waktu_masuk), 'dd/MM/yyyy HH:mm'),
     ])
     const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -118,9 +118,15 @@ export default function DataPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-              <button className="btn-primary">
-                Kirim {selected.length} data ke Bea Cukai
-              </button>
+            {selected.length > 0 ? (
+                <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">
+                  <Send size={14} /> Kirim {selected.length || 0} ke Bea Cukai
+                </button>
+            ) : (
+                <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-400 text-white cursor-default transition-colors">
+                  <Send size={14} /> Kirim 0 ke Bea Cukai
+                </button>
+            )}
             <button onClick={fetchData} className="btn-secondary"><RefreshCw size={14} /></button>
             <button onClick={exportCSV} className="btn-secondary">
               <Download size={14} /> Export CSV
@@ -156,7 +162,7 @@ export default function DataPage() {
           </div>
 
           {showFilters && (
-              <div className="pt-3 border-t border-surface-700 space-y-3">
+              <div className="pt-3 border-t border-surface-700">
                 <div className="flex gap-3">
                   <div className="flex-1">
                     <label className="label">Dari Tanggal</label>
@@ -168,8 +174,8 @@ export default function DataPage() {
                     <input type="date" className="input" value={filters.dateTo}
                            onChange={e => { setFilters(f => ({ ...f, dateTo: e.target.value })); setPage(1) }} />
                   </div>
-                  <div className="flex items-end">
-                    <button onClick={resetFilters} className="btn-secondary me-2">Set Today</button>
+                  <div className="flex items-end gap-2">
+                    <button onClick={setToday} className="btn-secondary">Hari Ini</button>
                     <button onClick={resetFilters} className="btn-secondary">Reset</button>
                   </div>
                 </div>
@@ -195,19 +201,20 @@ export default function DataPage() {
                           onChange={(e) => setSelected(e.target.checked ? data.map(d => d.id) : [])}
                           checked={selected.length === data.length && data.length > 0}
                       />
-                    </th>                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. AJU</th>
+                    </th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. AJU</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Waktu Masuk</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. MAWB</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. HAWB</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Rute</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Jumlah Barang</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Airline / Rute</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Pieces / Berat</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Aksi</th>
                   </tr>
                   </thead>
                   <tbody className="divide-y divide-surface-800/50">
                   {data.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="text-center py-12">
+                        <td colSpan={8} className="text-center py-12">
                           <Package size={32} className="text-surface-600 mx-auto mb-3" />
                           <p className="text-surface-400 text-sm">Tidak ada data ditemukan</p>
                         </td>
@@ -221,29 +228,30 @@ export default function DataPage() {
                               checked={selected.includes(item.id)}
                               onChange={(e) =>
                                   setSelected(prev =>
-                                      e.target.checked ? [...prev, item.id] : prev.filter(id => id !== item.id)
+                                      e.target.checked ? [...prev, item.id] : prev.filter(i => i !== item.id)
                                   )
                               }
                           />
                         </td>
                         <td className="py-3 px-4">
-                          <span className="font-mono text-xs text-brand-400 font-medium">{item.id_barang}</span>
+                          <span className="font-mono text-xs text-brand-400 font-medium">{item.aju || '—'}</span>
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-1.5 text-xs text-surface-300">
+                            <Clock size={11} className="text-surface-500" />
                             {format(new Date(item.waktu_masuk), 'dd/MM/yyyy', { locale: id })}
                             <span className="font-mono text-surface-500">{format(new Date(item.waktu_masuk), 'HH:mm')}</span>
                           </div>
                         </td>
                         <td className="py-3 px-4">
-                          <span className="font-mono texttext-surface-200-xs ">
-                            {item.mawb || <span className="italic text-surface-600">—</span>}
-                          </span>
+                      <span className="font-mono text-xs text-surface-200">
+                        {item.mawb || <span className="italic text-surface-600">—</span>}
+                      </span>
                         </td>
                         <td className="py-3 px-4">
-                          <span className="font-mono texttext-surface-200-xs ">
-                            {item.hawb || <span className="italic text-surface-600">—</span>}
-                          </span>
+                      <span className="font-mono text-xs text-surface-200">
+                        {item.hawb || <span className="italic text-surface-600">—</span>}
+                      </span>
                         </td>
                         <td className="py-3 px-4">
                           <div className="space-y-0.5">
@@ -256,11 +264,14 @@ export default function DataPage() {
                           </div>
                         </td>
                         <td className="py-3 px-4">
-                          <span className="text-xs text-surface-400 truncate max-w-[160px] block">
+                          <div className="space-y-0.5">
                             {item.jumlah_pieces != null && (
-                                <p className="text-[10px] text-surface-500">{item.jumlah_pieces} pcs</p>
+                                <p className="text-xs text-surface-300">{item.jumlah_pieces} pcs</p>
                             )}
-                          </span>
+                            {item.weight && (
+                                <p className="text-[10px] text-surface-500">{item.weight} kg</p>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-4">
                           <Link

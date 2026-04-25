@@ -25,31 +25,35 @@ export type Profile = {
 
 export type InspeksiBarang = {
   id: string
-  id_barang: string
   waktu_masuk: string
-  logam: boolean
-  organik: boolean
-  cairan: boolean
-  sintetis: boolean
-  foto_url: string | null
-  raw_stats: Record<string, unknown> | null
   created_at: string
   created_by: string | null
   updated_at: string | null
   updated_by: string | null
-  catatan: string | null
-  mawb: string | null               // NEW
-  hawb: string | null               // NEW
-  airline_code: string | null       // NEW
-  ori_dest: string | null           // NEW
-  jumlah_pieces: number | null      // NEW
-  agent_code: string | null         // NEW
-  consignee_code: string | null     // NEW
-  note_handling: string | null      // NEW
-  shipper_pic_name: string | null   // NEW
-  shipper_pic_number: string | null // NEW
-  foto_samping_url: string | null // NEW
+  aju: string | null
+  mawb: string | null
+  hawb: string | null
+  tanggal_awb : string | null
+  kode_kantor : string | null
+  airline_code: string | null
+  ori_dest: string | null
+  jumlah_pieces: number | null
+  weight: string | null
+  note_handling: string | null
+  shipper_pic_name: string | null
+  shipper_pic_number: string | null
   profiles?: Profile
+  barang?: Barang[]
+}
+
+export type Barang = {
+  id: string
+  id_barang: string
+  mawb: string | null
+  hawb: string | null
+  foto_url_atas: string | null
+  foto_url_samping: string | null
+  created_at: string
 }
 
 export type UserActivity = {

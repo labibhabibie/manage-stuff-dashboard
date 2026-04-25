@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
-  ArrowLeft, Atom, Leaf, Droplets, Zap, Clock, Image,
-  FileText, Edit2, Save, X, AlertTriangle, Loader2,
-  CheckCircle2, Plane, Package2, Phone, User, SendIcon, Upload
+  ArrowLeft, Atom, Leaf, Droplets, Zap, Clock,
+  Image, FileText, Edit2, Save, X, AlertTriangle,
+  Loader2, CheckCircle2, Plane, Package2, Phone,
+  User, Send, Upload,
 } from "lucide-react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
-import { supabase, InspeksiBarang, logActivity } from "../lib/supabase";
+import { supabase, InspeksiBarang, Barang, logActivity } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
 
-// ─── Moved outside to prevent remount on every render ───────────────────────
+// ─── Outside component to prevent remount/focus loss ────────────────────────
 
 const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div>
@@ -22,12 +23,7 @@ const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
 );
 
 const EditField = ({
-                     label,
-                     field,
-                     type = "text",
-                     placeholder = "",
-                     value,
-                     onChange,
+                     label, field, type = "text", placeholder = "", value, onChange,
                    }: {
   label: string;
   field: string;
@@ -53,29 +49,32 @@ const EditField = ({
 export default function DetailPage() {
   const { id: recordId } = useParams<{ id: string }>();
   const [item, setItem] = useState<InspeksiBarang | null>(null);
+  const [barangList, setBarangList] = useState<Barang[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Per-barang file state: { [barang_id]: { atas?: File, samping?: File } }
+  const [fotoFiles, setFotoFiles] = useState<
+      Record<string, { atas?: File; samping?: File }>
+  >({});
+
   const [editData, setEditData] = useState({
-    catatan: "",
-    logam: false,
-    organik: false,
-    cairan: false,
-    sintetis: false,
+    aju: "",
     mawb: "",
     hawb: "",
+    tanggal_awb: "",
+    kode_kantor: "",
     airline_code: "",
     ori_dest: "",
     jumlah_pieces: "" as string | number,
-    agent_code: "",
-    consignee_code: "",
+    weight: "",
     note_handling: "",
     shipper_pic_name: "",
     shipper_pic_number: "",
-    foto_url_file: undefined as File | undefined,
-    foto_samping_url_file: undefined as File | undefined,
   });
+
   const { user, isAdmin } = useAuth();
 
   useEffect(() => {
@@ -85,31 +84,35 @@ export default function DetailPage() {
   const fetchDetail = async () => {
     setLoading(true);
     const { data } = await supabase
-        .from("inspeksi_barang")
+        .from("inspeksi_barang_v2")
         .select("*, profiles!created_by(full_name, email)")
         .eq("id", recordId!)
         .single();
+
     if (data) {
       setItem(data as InspeksiBarang);
       setEditData({
-        catatan: data.catatan || "",
-        logam: data.logam,
-        organik: data.organik,
-        cairan: data.cairan,
-        sintetis: data.sintetis,
+        aju: data.aju || "",
         mawb: data.mawb || "",
         hawb: data.hawb || "",
+        tanggal_awb: data.tanggal_awb || "",
+        kode_kantor: data.kode_kantor || "",
         airline_code: data.airline_code || "",
         ori_dest: data.ori_dest || "",
         jumlah_pieces: data.jumlah_pieces ?? "",
-        agent_code: data.agent_code || "",
-        consignee_code: data.consignee_code || "",
+        weight: data.weight || "",
         note_handling: data.note_handling || "",
         shipper_pic_name: data.shipper_pic_name || "",
         shipper_pic_number: data.shipper_pic_number || "",
-        foto_url_file: data.foto_url_file || "",
-        foto_samping_url_file: data.foto_samping_url_file || "",
       });
+
+      // Fetch related barang rows
+      const { data: barangData } = await supabase
+          .from("barang")
+          .select("*")
+          .or(`mawb.eq.${data.mawb},hawb.eq.${data.hawb}`)
+          .order("created_at");
+      setBarangList(barangData || []);
     }
     setLoading(false);
   };
@@ -118,68 +121,90 @@ export default function DetailPage() {
     if (!item || !user) return;
     setSaving(true);
 
-    let foto_url = item.foto_url
-    let foto_samping_url = item.foto_samping_url
+    // Upload any changed foto files per barang
+    for (const barang of barangList) {
+      const files = fotoFiles[barang.id];
+      if (!files) continue;
 
-    if (editData.foto_url_file) {
-      const { data } = await supabase.storage
-          .from('inspeksi-foto')
-          .upload(`${item.id}/depan_${Date.now()}`, editData.foto_url_file, { upsert: true })
-      if (data) {
-        const { data: { publicUrl } } = supabase.storage.from('inspeksi-foto').getPublicUrl(data.path)
-        foto_url = publicUrl
+      let foto_url_atas = barang.foto_url_atas;
+      let foto_url_samping = barang.foto_url_samping;
+
+      if (files.atas) {
+        const { data } = await supabase.storage
+            .from("inspeksi-foto")
+            .upload(`${item.id}/${barang.id}/atas_${Date.now()}`, files.atas, { upsert: true });
+        if (data) {
+          const { data: { publicUrl } } = supabase.storage
+              .from("inspeksi-foto")
+              .getPublicUrl(data.path);
+          foto_url_atas = publicUrl;
+        }
       }
+
+      if (files.samping) {
+        const { data } = await supabase.storage
+            .from("inspeksi-foto")
+            .upload(`${item.id}/${barang.id}/samping_${Date.now()}`, files.samping, { upsert: true });
+        if (data) {
+          const { data: { publicUrl } } = supabase.storage
+              .from("inspeksi-foto")
+              .getPublicUrl(data.path);
+          foto_url_samping = publicUrl;
+        }
+      }
+
+      await supabase
+          .from("barang")
+          .update({ foto_url_atas, foto_url_samping })
+          .eq("id", barang.id);
     }
 
-    if (editData.foto_samping_url_file) {
-      const { data } = await supabase.storage
-          .from('inspeksi-foto')
-          .upload(`${item.id}/samping_${Date.now()}`, editData.foto_samping_url_file, { upsert: true })
-      if (data) {
-        const { data: { publicUrl } } = supabase.storage.from('inspeksi-foto').getPublicUrl(data.path)
-        foto_samping_url = publicUrl
-      }
-    }
-
+    // Update inspeksi_barang_v2
     const payload = {
       ...editData,
-      foto_url,
-      foto_samping_url,
-      jumlah_pieces:
-          editData.jumlah_pieces === "" ? null : Number(editData.jumlah_pieces),
+      jumlah_pieces: editData.jumlah_pieces === "" ? null : Number(editData.jumlah_pieces),
       updated_by: user.id,
-      foto_url_file: undefined,        // strip File objects before sending to DB
-      foto_samping_url_file: undefined,
     };
+
     const { error } = await supabase
-        .from("inspeksi_barang")
+        .from("inspeksi_barang_v2")
         .update(payload)
         .eq("id", item.id);
+
     setSaving(false);
+
     if (!error) {
       await logActivity(user.id, "update", {
-        targetTable: "inspeksi_barang",
+        targetTable: "inspeksi_barang_v2",
         targetId: item.id,
-        description: `Update data inspeksi ${item.id_barang}`,
+        description: `Update data inspeksi ${item.aju}`,
       });
       setSaved(true);
+      setFotoFiles({});
       setTimeout(() => setSaved(false), 3000);
       setEditing(false);
       fetchDetail();
     }
   };
 
-  // Shared onChange handler for all EditField components
   const handleFieldChange = (field: string, value: string) => {
     setEditData((d) => ({ ...d, [field]: value }));
   };
 
-  const typeConfig = [
-    { key: "logam",    label: "Logam",    Icon: Atom,     cls: "badge-logam",    desc: "Terdeteksi kandungan logam" },
-    { key: "organik",  label: "Organik",  Icon: Leaf,     cls: "badge-organik",  desc: "Terdeteksi bahan organik" },
-    { key: "cairan",   label: "Cairan",   Icon: Droplets, cls: "badge-cairan",   desc: "Terdeteksi kandungan cairan" },
-    { key: "sintetis", label: "Sintetis", Icon: Zap,      cls: "badge-sintetis", desc: "Terdeteksi material sintetis" },
-  ];
+  const setFotoFile = (barangId: string, side: "atas" | "samping", file: File) => {
+    setFotoFiles((prev) => ({
+      ...prev,
+      [barangId]: { ...prev[barangId], [side]: file },
+    }));
+  };
+
+  const clearFotoFile = (barangId: string, side: "atas" | "samping") => {
+    setFotoFiles((prev) => {
+      const updated = { ...prev[barangId] };
+      delete updated[side];
+      return { ...prev, [barangId]: updated };
+    });
+  };
 
   if (loading)
     return (
@@ -193,15 +218,9 @@ export default function DetailPage() {
         <div className="text-center py-20">
           <AlertTriangle size={40} className="text-amber-500 mx-auto mb-3" />
           <p className="text-surface-300">Data tidak ditemukan</p>
-          <Link to="/data" className="btn-secondary mt-4 inline-flex">
-            Kembali
-          </Link>
+          <Link to="/data" className="btn-secondary mt-4 inline-flex">Kembali</Link>
         </div>
     );
-
-  const activeTypes = typeConfig.filter(
-      (t) => item[t.key as keyof InspeksiBarang] as boolean
-  );
 
   return (
       <div className="max-w-4xl space-y-5">
@@ -218,7 +237,7 @@ export default function DetailPage() {
               <div className="flex items-center gap-2">
                 <h2 className="font-display font-bold text-white text-lg">
                   Inspeksi:{" "}
-                  <span className="font-mono text-brand-400">{item.id_barang}</span>
+                  <span className="font-mono text-brand-400">{item.aju}</span>
                 </h2>
                 {saved && (
                     <span className="flex items-center gap-1 text-xs text-green-400">
@@ -228,38 +247,24 @@ export default function DetailPage() {
               </div>
               <p className="text-xs text-surface-400 mt-0.5">
                 Dibuat{" "}
-                {format(new Date(item.created_at), "dd MMMM yyyy, HH:mm", {
-                  locale: id,
-                })}
+                {format(new Date(item.created_at), "dd MMMM yyyy, HH:mm", { locale: id })}
               </p>
             </div>
           </div>
           {isAdmin && (
               <div className="flex gap-2">
                 <button
-                    onClick={() => setEditing(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-400 hover:bg-emerald-500 text-white transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
                 >
-                  <SendIcon size={14} /> Kirim Bea Cukai
+                  <Send size={14} /> Kirim Bea Cukai
                 </button>
                 {editing ? (
                     <>
-                      <button
-                          onClick={() => setEditing(false)}
-                          className="btn-secondary"
-                      >
+                      <button onClick={() => setEditing(false)} className="btn-secondary">
                         <X size={14} /> Batal
                       </button>
-                      <button
-                          onClick={handleSave}
-                          disabled={saving}
-                          className="btn-primary"
-                      >
-                        {saving ? (
-                            <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                            <Save size={14} />
-                        )}
+                      <button onClick={handleSave} disabled={saving} className="btn-primary">
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                         Simpan
                       </button>
                     </>
@@ -283,37 +288,27 @@ export default function DetailPage() {
               <div className="grid grid-cols-2 gap-4">
                 <Field
                     label="No AJU"
-                    value={
-                      <span className="font-mono text-brand-400 text-sm font-medium">
-                    {item.id_barang}
-                  </span>
-                    }
+                    value={<span className="font-mono text-brand-400 text-sm font-medium">{item.aju}</span>}
                 />
                 <div>
                   <p className="label">Waktu Masuk</p>
                   <div className="flex items-center gap-1.5 text-sm text-surface-200">
                     <Clock size={13} className="text-surface-400" />
-                    {format(new Date(item.waktu_masuk), "dd MMM yyyy HH:mm", {
-                      locale: id,
-                    })}
+                    {format(new Date(item.waktu_masuk), "dd MMM yyyy HH:mm", { locale: id })}
                   </div>
                 </div>
                 <Field
                     label="Dibuat Oleh"
                     value={
-                        (item.profiles as { full_name?: string; email?: string })
-                            ?.full_name ||
-                        (item.profiles as { full_name?: string; email?: string })
-                            ?.email
+                        (item.profiles as { full_name?: string; email?: string })?.full_name ||
+                        (item.profiles as { full_name?: string; email?: string })?.email
                     }
                 />
                 <div>
                   <p className="label">Terakhir Diubah</p>
                   <p className="text-sm text-surface-300">
                     {item.updated_at
-                        ? format(new Date(item.updated_at), "dd MMM yyyy HH:mm", {
-                          locale: id,
-                        })
+                        ? format(new Date(item.updated_at), "dd MMM yyyy HH:mm", { locale: id })
                         : "—"}
                   </p>
                 </div>
@@ -327,69 +322,67 @@ export default function DetailPage() {
               </h3>
               {editing ? (
                   <div className="grid grid-cols-2 gap-4">
-                    <EditField label="MAWB"           field="mawb"           value={editData.mawb}                    onChange={handleFieldChange} placeholder="Master Air Waybill" />
-                    <EditField label="HAWB"           field="hawb"           value={editData.hawb}                    onChange={handleFieldChange} placeholder="House Air Waybill" />
-                    <EditField label="Airline Code"   field="airline_code"   value={editData.airline_code}            onChange={handleFieldChange} placeholder="e.g. GA, SQ, QZ" />
-                    <EditField label="Ori / Dest"     field="ori_dest"       value={editData.ori_dest}                onChange={handleFieldChange} placeholder="e.g. CGK-SIN" />
-                    <EditField label="Jumlah Pieces"  field="jumlah_pieces"  value={editData.jumlah_pieces as string} onChange={handleFieldChange} type="number" placeholder="0" />
-                    <EditField label="Berat (Kg)"     field="agent_code"     value={editData.agent_code}              onChange={handleFieldChange} placeholder="Berat (kg)" />
-                    <EditField label="Tanggal AWB"    field="consignee_code" value={editData.consignee_code}          onChange={handleFieldChange} placeholder="Tanggal AWB" />
+                    <EditField label="MAWB"          field="mawb"          value={editData.mawb}                    onChange={handleFieldChange} placeholder="Master Air Waybill" />
+                    <EditField label="HAWB"          field="hawb"          value={editData.hawb}                    onChange={handleFieldChange} placeholder="House Air Waybill" />
+                    <EditField label="Airline Code"  field="airline_code"  value={editData.airline_code}            onChange={handleFieldChange} placeholder="e.g. GA, SQ, QZ" />
+                    <EditField label="Ori / Dest"    field="ori_dest"      value={editData.ori_dest}                onChange={handleFieldChange} placeholder="e.g. CGK-SIN" />
+                    <EditField label="Jumlah Pieces" field="jumlah_pieces" value={editData.jumlah_pieces as string} onChange={handleFieldChange} type="number" placeholder="0" />
+                    <EditField label="Berat (Kg)"    field="weight"        value={editData.weight}                  onChange={handleFieldChange} placeholder="Berat (kg)" />
+                    <EditField label="Tanggal AWB"   field="tanggal_awb"   value={editData.tanggal_awb}             onChange={handleFieldChange} placeholder="Tanggal AWB" type="date" />
                   </div>
               ) : (
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="MAWB"           value={item.mawb} />
-                    <Field label="HAWB"           value={item.hawb} />
-                    <Field label="Airline Code"   value={item.airline_code} />
-                    <Field label="Ori / Dest"     value={item.ori_dest} />
-                    <Field label="Jumlah Pieces"  value={item.jumlah_pieces != null ? `${item.jumlah_pieces} pcs` : null} />
-                    <Field label="Berat (Kg)"     value={item.agent_code} />
-                    <Field label="Tanggal AWB"    value={item.consignee_code} />
+                    <Field label="MAWB"          value={item.mawb} />
+                    <Field label="HAWB"          value={item.hawb} />
+                    <Field label="Airline Code"  value={item.airline_code} />
+                    <Field label="Ori / Dest"    value={item.ori_dest} />
+                    <Field label="Jumlah Pieces" value={item.jumlah_pieces != null ? `${item.jumlah_pieces} pcs` : null} />
+                    <Field label="Berat (Kg)"    value={item.weight} />
+                    <Field label="Tanggal AWB"   value={item.tanggal_awb} />
                   </div>
               )}
             </div>
-            {/* Foto Barang */}
-            {[1, 2, 3].map((n) => (
-                <div key={n} className="card p-5">
+
+            {/* Foto per Barang */}
+            {barangList.map((barang, idx) => (
+                <div key={barang.id} className="card p-5">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-semibold text-surface-400 uppercase tracking-wider">
-                      Barang {n}
-                    </h3>
-                    {/* Hanya akan muncul jika barang sudah dikirim ke bea cukai */}
-                    <button
-                        onClick={() => setEditing(true)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
-                    >
-                      <Upload size={11} /> Tambah Foto Bea Cukai
-                    </button>
+                    <div>
+                      <h3 className="text-xs font-semibold text-surface-400 uppercase tracking-wider">
+                        Barang {idx + 1}
+                      </h3>
+                      <p className="text-xs font-mono text-brand-400 mt-0.5">{barang.id_barang}</p>
+                    </div>
+                    {!editing && (
+                        <button
+                            onClick={() => setEditing(true)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                        >
+                          <Upload size={11} /> Tambah Foto Bea Cukai
+                        </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
 
-                    {/* Foto Depan */}
+                    {/* Foto Atas */}
                     <div>
                       <p className="flex items-center gap-1.5 text-xs text-surface-500 mb-1.5">
-                        <Image size={11} /> Foto Depan
+                        <Image size={11} /> Foto Atas
                       </p>
                       {editing ? (
                           <div className="space-y-2">
-                            {item.foto_url ? (
+                            {barang.foto_url_atas ? (
                                 <div className="rounded-lg overflow-hidden relative group">
                                   <img
-                                      src={item.foto_url}
-                                      alt={`${item.id_barang} barang ${n} depan`}
+                                      src={barang.foto_url_atas}
+                                      alt={`${barang.id_barang} atas`}
                                       className="w-full h-28 object-cover"
                                   />
                                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                     <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-white/20 hover:bg-white/30 text-white transition-colors">
                                       <Upload size={12} /> Ganti Foto
-                                      <input
-                                          type="file"
-                                          accept="image/*"
-                                          className="sr-only"
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0]
-                                            if (file) setEditData(d => ({ ...d, foto_url_file: file }))
-                                          }}
-                                      />
+                                      <input type="file" accept="image/*" className="sr-only"
+                                             onChange={(e) => { const f = e.target.files?.[0]; if (f) setFotoFile(barang.id, "atas", f); }} />
                                     </label>
                                   </div>
                                 </div>
@@ -397,27 +390,19 @@ export default function DetailPage() {
                                 <label className="cursor-pointer rounded-lg border border-dashed border-brand-700 h-28 flex flex-col items-center justify-center text-surface-400 hover:border-brand-500 hover:text-surface-300 transition-colors">
                                   <Upload size={20} className="mb-1.5 opacity-60" />
                                   <p className="text-xs">Klik untuk upload</p>
-                                  <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="sr-only"
-                                      onChange={(e) => {
-                                        const file = e.target.files?.[0]
-                                        if (file) setEditData(d => ({ ...d, foto_url_file: file }))
-                                      }}
-                                  />
+                                  <input type="file" accept="image/*" className="sr-only"
+                                         onChange={(e) => { const f = e.target.files?.[0]; if (f) setFotoFile(barang.id, "atas", f); }} />
                                 </label>
                             )}
-                            {/* Preview file baru sebelum disimpan */}
-                            {editData.foto_url_file && (
+                            {fotoFiles[barang.id]?.atas && (
                                 <div className="rounded-lg overflow-hidden relative">
                                   <img
-                                      src={URL.createObjectURL(editData.foto_url_file)}
+                                      src={URL.createObjectURL(fotoFiles[barang.id].atas!)}
                                       className="w-full h-28 object-cover"
-                                      alt="preview depan"
+                                      alt="preview atas"
                                   />
                                   <button
-                                      onClick={() => setEditData(d => ({ ...d, foto_url_file: undefined }))}
+                                      onClick={() => clearFotoFile(barang.id, "atas")}
                                       className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black/80"
                                   >
                                     <X size={10} />
@@ -427,13 +412,9 @@ export default function DetailPage() {
                             )}
                           </div>
                       ) : (
-                          item.foto_url ? (
+                          barang.foto_url_atas ? (
                               <div className="rounded-lg overflow-hidden">
-                                <img
-                                    src={item.foto_url}
-                                    alt={`${item.id_barang} barang ${n} depan`}
-                                    className="w-full h-28 object-cover"
-                                />
+                                <img src={barang.foto_url_atas} alt={`${barang.id_barang} atas`} className="w-full h-28 object-cover" />
                               </div>
                           ) : (
                               <div className="rounded-lg border border-dashed border-surface-700 h-28 flex flex-col items-center justify-center text-surface-600">
@@ -451,25 +432,18 @@ export default function DetailPage() {
                       </p>
                       {editing ? (
                           <div className="space-y-2">
-                            {item.foto_samping_url ? (
+                            {barang.foto_url_samping ? (
                                 <div className="rounded-lg overflow-hidden relative group">
                                   <img
-                                      src={item.foto_samping_url}
-                                      alt={`${item.id_barang} barang ${n} samping`}
+                                      src={barang.foto_url_samping}
+                                      alt={`${barang.id_barang} samping`}
                                       className="w-full h-28 object-cover"
                                   />
                                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                     <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-white/20 hover:bg-white/30 text-white transition-colors">
                                       <Upload size={12} /> Ganti Foto
-                                      <input
-                                          type="file"
-                                          accept="image/*"
-                                          className="sr-only"
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0]
-                                            if (file) setEditData(d => ({ ...d, foto_samping_url_file: file }))
-                                          }}
-                                      />
+                                      <input type="file" accept="image/*" className="sr-only"
+                                             onChange={(e) => { const f = e.target.files?.[0]; if (f) setFotoFile(barang.id, "samping", f); }} />
                                     </label>
                                   </div>
                                 </div>
@@ -477,26 +451,19 @@ export default function DetailPage() {
                                 <label className="cursor-pointer rounded-lg border border-dashed border-brand-700 h-28 flex flex-col items-center justify-center text-surface-400 hover:border-brand-500 hover:text-surface-300 transition-colors">
                                   <Upload size={20} className="mb-1.5 opacity-60" />
                                   <p className="text-xs">Klik untuk upload</p>
-                                  <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="sr-only"
-                                      onChange={(e) => {
-                                        const file = e.target.files?.[0]
-                                        if (file) setEditData(d => ({ ...d, foto_samping_url_file: file }))
-                                      }}
-                                  />
+                                  <input type="file" accept="image/*" className="sr-only"
+                                         onChange={(e) => { const f = e.target.files?.[0]; if (f) setFotoFile(barang.id, "samping", f); }} />
                                 </label>
                             )}
-                            {editData.foto_samping_url_file && (
+                            {fotoFiles[barang.id]?.samping && (
                                 <div className="rounded-lg overflow-hidden relative">
                                   <img
-                                      src={URL.createObjectURL(editData.foto_samping_url_file)}
+                                      src={URL.createObjectURL(fotoFiles[barang.id].samping!)}
                                       className="w-full h-28 object-cover"
                                       alt="preview samping"
                                   />
                                   <button
-                                      onClick={() => setEditData(d => ({ ...d, foto_samping_url_file: undefined }))}
+                                      onClick={() => clearFotoFile(barang.id, "samping")}
                                       className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black/80"
                                   >
                                     <X size={10} />
@@ -506,13 +473,9 @@ export default function DetailPage() {
                             )}
                           </div>
                       ) : (
-                          item.foto_samping_url ? (
+                          barang.foto_url_samping ? (
                               <div className="rounded-lg overflow-hidden">
-                                <img
-                                    src={item.foto_samping_url}
-                                    alt={`${item.id_barang} barang ${n} samping`}
-                                    className="w-full h-28 object-cover"
-                                />
+                                <img src={barang.foto_url_samping} alt={`${barang.id_barang} samping`} className="w-full h-28 object-cover" />
                               </div>
                           ) : (
                               <div className="rounded-lg border border-dashed border-surface-700 h-28 flex flex-col items-center justify-center text-surface-600">
@@ -526,29 +489,31 @@ export default function DetailPage() {
                   </div>
                 </div>
             ))}
+
+            {barangList.length === 0 && (
+                <div className="card p-5 text-center text-surface-500 text-sm italic">
+                  Tidak ada data barang terkait
+                </div>
+            )}
+
           </div>
 
           {/* Sidebar */}
           <div className="space-y-4">
             <div className="card p-5">
-              {/* Kode Kantor */}
-              <div className="space-y-2 mb-3">
-                <h3 className="text-xs font-semibold text-surface-400">Kode Kantor:</h3>
-                <p className="text-xs text-surface-600 italic">
-                  BANTEN GLOBAL SERPONG
-                </p>
+              <div className="space-y-2 mb-4">
+                <h3 className="text-xs font-semibold text-surface-400">Kode Kantor</h3>
+                {editing ? (
+                    <EditField label="" field="kode_kantor" value={editData.kode_kantor} onChange={handleFieldChange} placeholder="Kode kantor" />
+                ) : (
+                    <p className="text-sm text-surface-200">{item.kode_kantor || <span className="italic text-surface-600">—</span>}</p>
+                )}
               </div>
-
-              {/* Status */}
-              <h3 className="text-xs font-semibold text-surface-400 uppercase tracking-wider mb-3">
-                Status
-              </h3>
-              <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-xs font-semibold text-surface-400 uppercase tracking-wider mb-3">Status</h3>
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-green-900/30 text-green-400 border border-green-800/50">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                Selesai Diinspeksi
-              </span>
-              </div>
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              Selesai Diinspeksi
+            </span>
             </div>
 
             {/* Shipper PIC */}
@@ -557,28 +522,24 @@ export default function DetailPage() {
                 <User size={12} /> Shipper PIC
               </h3>
               {editing ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <EditField label="Nama PIC"   field="shipper_pic_name"   value={editData.shipper_pic_name}   onChange={handleFieldChange} placeholder="Nama penanggung jawab" />
-                    <EditField label="Nomor PIC"  field="shipper_pic_number" value={editData.shipper_pic_number} onChange={handleFieldChange} placeholder="No. HP / telepon" />
+                  <div className="space-y-3">
+                    <EditField label="Nama PIC"  field="shipper_pic_name"   value={editData.shipper_pic_name}   onChange={handleFieldChange} placeholder="Nama penanggung jawab" />
+                    <EditField label="Nomor PIC" field="shipper_pic_number" value={editData.shipper_pic_number} onChange={handleFieldChange} placeholder="No. HP / telepon" />
                   </div>
               ) : (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-3">
                     <div>
                       <p className="label">Nama PIC</p>
                       <div className="flex items-center gap-1.5 text-sm text-surface-200">
                         <User size={13} className="text-surface-400 shrink-0" />
-                        {item.shipper_pic_name || (
-                            <span className="italic text-surface-600">—</span>
-                        )}
+                        {item.shipper_pic_name || <span className="italic text-surface-600">—</span>}
                       </div>
                     </div>
                     <div>
                       <p className="label">Nomor PIC</p>
                       <div className="flex items-center gap-1.5 text-sm text-surface-200">
                         <Phone size={13} className="text-surface-400 shrink-0" />
-                        {item.shipper_pic_number || (
-                            <span className="italic text-surface-600">—</span>
-                        )}
+                        {item.shipper_pic_number || <span className="italic text-surface-600">—</span>}
                       </div>
                     </div>
                   </div>
@@ -595,17 +556,11 @@ export default function DetailPage() {
                       className="input h-24 resize-none"
                       placeholder="Instruksi penanganan..."
                       value={editData.note_handling}
-                      onChange={(e) =>
-                          setEditData((d) => ({ ...d, note_handling: e.target.value }))
-                      }
+                      onChange={(e) => setEditData((d) => ({ ...d, note_handling: e.target.value }))}
                   />
               ) : (
                   <p className="text-sm text-surface-300 leading-relaxed">
-                    {item.note_handling || (
-                        <span className="italic text-surface-600">
-                    Tidak ada note handling
-                  </span>
-                    )}
+                    {item.note_handling || <span className="italic text-surface-600">Tidak ada note handling</span>}
                   </p>
               )}
             </div>
