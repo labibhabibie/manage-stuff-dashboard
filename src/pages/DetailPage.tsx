@@ -44,6 +44,33 @@ const EditField = ({
     </div>
 );
 
+// SEMENTARA PENGGANTI API
+const MOCK_FALLBACK = {
+  mawb: '217-60010018',
+  airline_code: 'GA',
+  ori_dest: 'LAX-CGK',
+  weight: '5',
+  tanggal_awb: '2026-4-24',
+  kode_kantor: 'KANTOR BANTEN',
+  shipper_pic_name: 'Naufal',
+  shipper_pic_number: '+6262626262',
+  note_handling: 'Tidak ada instruksi penanganan.',
+}
+
+const MockField = ({ label, value, mock }: {
+  label: string
+  value: string | null | undefined
+  mock: string
+}) => (
+    <div>
+      <p className="label">{label}</p>
+      {value
+          ? <p className="text-sm text-surface-200">{value}</p>
+          : <p className="text-sm text-surface-600 italic">{mock}</p>
+      }
+    </div>
+)
+
 // ────────────────────────────────────────────────────────────────────────────
 
 export default function DetailPage() {
@@ -68,7 +95,6 @@ export default function DetailPage() {
     kode_kantor: "",
     airline_code: "",
     ori_dest: "",
-    jumlah_pieces: "" as string | number,
     weight: "",
     note_handling: "",
     shipper_pic_name: "",
@@ -93,18 +119,17 @@ export default function DetailPage() {
       setItem(data as InspeksiBarang);
       setEditData({
         aju: data.aju || "",
-        mawb: data.mawb || "",
-        hawb: data.hawb || "",
-        tanggal_awb: data.tanggal_awb || "",
-        kode_kantor: data.kode_kantor || "",
-        airline_code: data.airline_code || "",
-        ori_dest: data.ori_dest || "",
-        jumlah_pieces: data.jumlah_pieces ?? "",
-        weight: data.weight || "",
-        note_handling: data.note_handling || "",
-        shipper_pic_name: data.shipper_pic_name || "",
-        shipper_pic_number: data.shipper_pic_number || "",
-      });
+        mawb: data.mawb || MOCK_FALLBACK.mawb,           // ← use mock if null
+        hawb: data.hawb || "",                            // ← hawb intentionally blank (can be null)
+        airline_code: data.airline_code || MOCK_FALLBACK.airline_code,
+        ori_dest: data.ori_dest || MOCK_FALLBACK.ori_dest,
+        weight: data.weight || MOCK_FALLBACK.weight,
+        tanggal_awb: data.tanggal_awb || MOCK_FALLBACK.tanggal_awb,
+        kode_kantor: data.kode_kantor || MOCK_FALLBACK.kode_kantor,
+        shipper_pic_name: data.shipper_pic_name || MOCK_FALLBACK.shipper_pic_name,
+        shipper_pic_number: data.shipper_pic_number || MOCK_FALLBACK.shipper_pic_number,
+        note_handling: data.note_handling || MOCK_FALLBACK.note_handling,
+      })
 
       // Fetch related barang rows
       const { data: barangData } = await supabase
@@ -162,7 +187,6 @@ export default function DetailPage() {
     // Update inspeksi_barang_v2
     const payload = {
       ...editData,
-      jumlah_pieces: editData.jumlah_pieces === "" ? null : Number(editData.jumlah_pieces),
       updated_by: user.id,
     };
 
@@ -324,21 +348,27 @@ export default function DetailPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <EditField label="MAWB"          field="mawb"          value={editData.mawb}                    onChange={handleFieldChange} placeholder="Master Air Waybill" />
                     <EditField label="HAWB"          field="hawb"          value={editData.hawb}                    onChange={handleFieldChange} placeholder="House Air Waybill" />
-                    <EditField label="Airline Code"  field="airline_code"  value={editData.airline_code}            onChange={handleFieldChange} placeholder="e.g. GA, SQ, QZ" />
-                    <EditField label="Ori / Dest"    field="ori_dest"      value={editData.ori_dest}                onChange={handleFieldChange} placeholder="e.g. CGK-SIN" />
-                    <EditField label="Jumlah Pieces" field="jumlah_pieces" value={editData.jumlah_pieces as string} onChange={handleFieldChange} type="number" placeholder="0" />
-                    <EditField label="Berat (Kg)"    field="weight"        value={editData.weight}                  onChange={handleFieldChange} placeholder="Berat (kg)" />
-                    <EditField label="Tanggal AWB"   field="tanggal_awb"   value={editData.tanggal_awb}             onChange={handleFieldChange} placeholder="Tanggal AWB" type="date" />
+                    <MockField label="Airline Code"  value={item.airline_code}  mock={MOCK_FALLBACK.airline_code} />
+                    <MockField label="Ori / Dest"    value={item.ori_dest}      mock={MOCK_FALLBACK.ori_dest} />
+                    <Field
+                        label="Jumlah Barang"
+                        value={barangList.length > 0 ? `${barangList.length} pcs` : null}
+                    />
+                    <MockField label="Berat (Kg)"    value={item.weight}        mock={MOCK_FALLBACK.weight} />
+                    <MockField label="Tanggal AWB"   value={item.tanggal_awb}   mock={MOCK_FALLBACK.tanggal_awb} />
                   </div>
               ) : (
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="MAWB"          value={item.mawb} />
-                    <Field label="HAWB"          value={item.hawb} />
-                    <Field label="Airline Code"  value={item.airline_code} />
-                    <Field label="Ori / Dest"    value={item.ori_dest} />
-                    <Field label="Jumlah Pieces" value={item.jumlah_pieces != null ? `${item.jumlah_pieces} pcs` : null} />
-                    <Field label="Berat (Kg)"    value={item.weight} />
-                    <Field label="Tanggal AWB"   value={item.tanggal_awb} />
+                    <MockField label="MAWB"          value={item.mawb}          mock={MOCK_FALLBACK.mawb} />
+                    <Field label="HAWB"          value={item.hawb}          /> {/* Punya possibility ga punya hawb */}
+                    <MockField label="Airline Code"  value={item.airline_code}  mock={MOCK_FALLBACK.airline_code} />
+                    <MockField label="Ori / Dest"    value={item.ori_dest}      mock={MOCK_FALLBACK.ori_dest} />
+                    <Field
+                        label="Jumlah Barang"
+                        value={barangList.length > 0 ? `${barangList.length} pcs` : null}
+                    />
+                    <MockField label="Berat (Kg)"    value={item.weight}        mock={MOCK_FALLBACK.weight} />
+                    <MockField label="Tanggal AWB"   value={item.tanggal_awb}   mock={MOCK_FALLBACK.tanggal_awb} />
                   </div>
               )}
             </div>
@@ -354,12 +384,20 @@ export default function DetailPage() {
                       <p className="text-xs font-mono text-brand-400 mt-0.5">{barang.id_barang}</p>
                     </div>
                     {!editing && (
-                        <button
-                            onClick={() => setEditing(true)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
-                        >
-                          <Upload size={11} /> Tambah Foto Bea Cukai
-                        </button>
+                        <div className="relative group">
+                          <button
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                          >
+                            <Upload size={11} /> Kirim Foto ke Bea Cukai
+                          </button>
+                          <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block z-10 w-56">
+                            <div className="bg-surface-800 border border-surface-600 text-surface-200 text-xs rounded-lg px-3 py-2 leading-relaxed shadow-lg">
+                              Tambahkan foto X-Ray ini ke data bea cukai yang sudah ada.
+                            </div>
+                            {/* arrow */}
+                            <div className="absolute top-full right-3 border-4 border-transparent border-t-surface-600" />
+                          </div>
+                        </div>
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -506,7 +544,12 @@ export default function DetailPage() {
                 {editing ? (
                     <EditField label="" field="kode_kantor" value={editData.kode_kantor} onChange={handleFieldChange} placeholder="Kode kantor" />
                 ) : (
-                    <p className="text-sm text-surface-200">{item.kode_kantor || <span className="italic text-surface-600">—</span>}</p>
+                    <p className="text-sm">
+                      {item.kode_kantor
+                          ? <span className="text-surface-200">{item.kode_kantor}</span>
+                          : <span className="text-surface-600 italic">{MOCK_FALLBACK.kode_kantor}</span>
+                      }
+                    </p>
                 )}
               </div>
               <h3 className="text-xs font-semibold text-surface-400 uppercase tracking-wider mb-3">Status</h3>
@@ -530,16 +573,22 @@ export default function DetailPage() {
                   <div className="space-y-3">
                     <div>
                       <p className="label">Nama PIC</p>
-                      <div className="flex items-center gap-1.5 text-sm text-surface-200">
+                      <div className="flex items-center gap-1.5 text-sm">
                         <User size={13} className="text-surface-400 shrink-0" />
-                        {item.shipper_pic_name || <span className="italic text-surface-600">—</span>}
+                        {item.shipper_pic_name
+                            ? <span className="text-surface-200">{item.shipper_pic_name}</span>
+                            : <span className="text-surface-600 italic">{MOCK_FALLBACK.shipper_pic_name}</span>
+                        }
                       </div>
                     </div>
                     <div>
                       <p className="label">Nomor PIC</p>
-                      <div className="flex items-center gap-1.5 text-sm text-surface-200">
+                      <div className="flex items-center gap-1.5 text-sm">
                         <Phone size={13} className="text-surface-400 shrink-0" />
-                        {item.shipper_pic_number || <span className="italic text-surface-600">—</span>}
+                        {item.shipper_pic_number
+                            ? <span className="text-surface-200">{item.shipper_pic_number}</span>
+                            : <span className="text-surface-600 italic">{MOCK_FALLBACK.shipper_pic_number}</span>
+                        }
                       </div>
                     </div>
                   </div>
@@ -559,8 +608,11 @@ export default function DetailPage() {
                       onChange={(e) => setEditData((d) => ({ ...d, note_handling: e.target.value }))}
                   />
               ) : (
-                  <p className="text-sm text-surface-300 leading-relaxed">
-                    {item.note_handling || <span className="italic text-surface-600">Tidak ada note handling</span>}
+                  <p className="text-sm leading-relaxed">
+                    {item.note_handling
+                        ? <span className="text-surface-300">{item.note_handling}</span>
+                        : <span className="text-surface-600 italic">{MOCK_FALLBACK.note_handling}</span>
+                    }
                   </p>
               )}
             </div>

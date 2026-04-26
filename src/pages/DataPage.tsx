@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Search, ChevronLeft, ChevronRight,
@@ -21,14 +21,23 @@ export default function DataPage() {
   const [data, setData] = useState<InspeksiBarang[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
+  const [barangCountMap, setBarangCountMap] = useState<Record<string, number>>({})
   const [total, setTotal] = useState(0)
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<Filters>({
     search: '', dateFrom: '', dateTo: ''
   })
   const [selected, setSelected] = useState<string[]>([])
+  const selectAllRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { fetchData() }, [page, filters])
+  useEffect(() => {
+    if (selectAllRef.current) {
+      const allChecked = data.length > 0 && data.every(d => selected.includes(d.id))
+      const someChecked = data.some(d => selected.includes(d.id))
+      selectAllRef.current.indeterminate = someChecked && !allChecked
+    }
+  }, [data, selected])
 
   const fetchData = async () => {
     setLoading(true)
@@ -48,6 +57,19 @@ export default function DataPage() {
 
       const { data: rows, count, error } = await query
 
+      // fetch barang counts for all returned rows
+      const ids = (rows || []).map(r => r.mawb).filter(Boolean)
+      const { data: barangCounts } = await supabase
+          .from('barang')
+          .select('mawb, id')
+          .in('mawb', ids)
+
+      // build a map: mawb → count
+      const barangCountMap: Record<string, number> = {}
+      barangCounts?.forEach(b => {
+        if (b.mawb) barangCountMap[b.mawb] = (barangCountMap[b.mawb] || 0) + 1
+      })
+
       if (error) {
         console.error('fetchData error:', error.message)
         setData([])
@@ -57,6 +79,7 @@ export default function DataPage() {
 
       setData(rows || [])
       setTotal(count || 0)
+      setBarangCountMap(barangCountMap)
     } finally {
       setLoading(false)
     }
@@ -118,9 +141,25 @@ export default function DataPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {selected.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                      onClick={() => setSelected([])}
+                      className="text-xs text-surface-400 hover:text-surface-200 transition-colors"
+                  >
+                    Batal pilih ({selected.length})
+                  </button>
+                </div>
+            )}
             {selected.length > 0 ? (
                 <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">
-                  <Send size={14} /> Kirim {selected.length || 0} ke Bea Cukai
+                  <Send size={14} /> Kirim {selected.length} ke Bea Cukai
+                  {/* Show a hint if selection spans multiple pages */}
+                  {selected.length > PAGE_SIZE && (
+                      <span className="ml-1 text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">
+                        {Math.ceil(selected.length / PAGE_SIZE)} halaman
+                      </span>
+                  )}
                 </button>
             ) : (
                 <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-400 text-white cursor-default transition-colors">
@@ -196,10 +235,18 @@ export default function DataPage() {
                   <tr className="border-b border-surface-700 bg-surface-900/50">
                     <th className="py-3 px-4">
                       <input
+                          ref={selectAllRef}
                           type="checkbox"
                           className="rounded border-surface-600 bg-surface-800 text-brand-500 cursor-pointer"
-                          onChange={(e) => setSelected(e.target.checked ? data.map(d => d.id) : [])}
-                          checked={selected.length === data.length && data.length > 0}
+                          onChange={(e) => {
+                            const currentPageIds = data.map(d => d.id)
+                            if (e.target.checked) {
+                              setSelected(prev => [...new Set([...prev, ...currentPageIds])])
+                            } else {
+                              setSelected(prev => prev.filter(id => !currentPageIds.includes(id)))
+                            }
+                          }}
+                          checked={data.length > 0 && data.every(d => selected.includes(d.id))}
                       />
                     </th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. AJU</th>
@@ -265,9 +312,10 @@ export default function DataPage() {
                         </td>
                         <td className="py-3 px-4">
                           <div className="space-y-0.5">
-                            {item.jumlah_pieces != null && (
-                                <p className="text-xs text-surface-300">{item.jumlah_pieces} pcs</p>
-                            )}
+                            {item.mawb && barangCountMap[item.mawb] != null
+                                ? <p className="text-xs text-surface-300">{barangCountMap[item.mawb]} pcs</p>
+                                : <p className="text-xs text-surface-600 italic">—</p>
+                            }
                             {item.weight && (
                                 <p className="text-[10px] text-surface-500">{item.weight} kg</p>
                             )}
