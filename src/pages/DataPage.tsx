@@ -29,8 +29,10 @@ export default function DataPage() {
   })
   const [selected, setSelected] = useState<string[]>([])
   const selectAllRef = useRef<HTMLInputElement>(null)
+  const [sortField, setSortField] = useState<string>('created_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
-  useEffect(() => { fetchData() }, [page, filters])
+  useEffect(() => { fetchData() }, [page, filters, sortField, sortDir])
   useEffect(() => {
     if (selectAllRef.current) {
       const allChecked = data.length > 0 && data.every(d => selected.includes(d.id))
@@ -39,13 +41,23 @@ export default function DataPage() {
     }
   }, [data, selected])
 
+  const handleSort = (field: string) => {
+      if (sortField === field) {
+          setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+      } else {
+          setSortField(field)
+          setSortDir('asc')
+      }
+      setPage(1)
+  }
+
   const fetchData = async () => {
     setLoading(true)
     try {
       let query = supabase
           .from('inspeksi_barang_v2')
           .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
+          .order(sortField, { ascending: sortDir === 'asc' })
           .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
       if (filters.search)
@@ -128,6 +140,32 @@ export default function DataPage() {
     a.href = url
     a.download = `inspeksi_${format(new Date(), 'yyyyMMdd')}.csv`
     a.click()
+  }
+
+  const SortHeader = ({
+                        label, field, sortField, sortDir, onSort
+                      }: {
+    label: string
+    field: string
+    sortField: string
+    sortDir: 'asc' | 'desc'
+    onSort: (field: string) => void
+  }) => {
+    const active = sortField === field
+    return (
+        <th
+            onClick={() => onSort(field)}
+            className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider cursor-pointer select-none hover:text-surface-200 transition-colors group"
+        >
+          <div className="flex items-center gap-1.5">
+            {label}
+            <span className={`flex flex-col gap-[2px] transition-opacity opacity-100`}>
+          <span className={`w-0 h-0 border-l-[3px] border-r-[3px] border-b-[4px] border-l-transparent border-r-transparent ${active && sortDir === 'asc' ? 'border-b-brand-400' : 'border-b-surface-400'}`} />
+          <span className={`w-0 h-0 border-l-[3px] border-r-[3px] border-t-[4px] border-l-transparent border-r-transparent ${active && sortDir === 'desc' ? 'border-t-brand-400' : 'border-t-surface-400'}`} />
+        </span>
+          </div>
+        </th>
+    )
   }
 
   return (
@@ -249,12 +287,12 @@ export default function DataPage() {
                           checked={data.length > 0 && data.every(d => selected.includes(d.id))}
                       />
                     </th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. AJU</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Waktu Masuk</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. MAWB</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">No. HAWB</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Airline / Rute</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Pieces / Berat</th>
+                    <SortHeader label="No. AJU"      field="aju"          sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Waktu Masuk"  field="waktu_masuk"  sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="No. MAWB"     field="mawb"         sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="No. HAWB"     field="hawb"         sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Airline/Rute" field="airline_code" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Pieces/Berat" field="jumlah_pieces" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Aksi</th>
                   </tr>
                   </thead>
