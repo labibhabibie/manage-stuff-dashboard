@@ -11,6 +11,7 @@ import { format, subDays, startOfDay } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { supabase, InspeksiBarang } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useGudangData } from '../hooks/useGudangData'
 
 type Stats = {
   total: number
@@ -27,6 +28,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const { profile } = useAuth()
+  const { getByIndex } = useGudangData()
 
   useEffect(() => {
     fetchStats()
@@ -228,27 +230,32 @@ export default function DashboardPage() {
               </tr>
               </thead>
               <tbody className="divide-y divide-surface-800">
-              {stats?.recentData.map(item => (
-                  <tr key={item.id} className="hover:bg-surface-800/50 transition-colors">
-                    <td className="py-2.5 px-3 font-mono text-xs text-brand-400">{item.aju || '—'}</td>
-                    <td className="py-2.5 px-3 font-mono text-xs text-surface-300">{item.mawb || '—'}</td>
-                    <td className="py-2.5 px-3 font-mono text-xs text-surface-300">{item.hawb || '—'}</td>
-                    <td className="py-2.5 px-3 text-xs text-surface-300">{item.airline_code || '—'}</td>
-                    <td className="py-2.5 px-3 text-xs text-surface-400 font-mono">{item.ori_dest || '—'}</td>
-                    <td className="py-2.5 px-3 text-surface-300 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <Clock size={11} className="text-surface-500" />
-                        {format(new Date(item.waktu_masuk), 'dd/MM/yy HH:mm')}
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-3">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-900/30 text-green-400 border border-green-800/50">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              {stats?.recentData.map((item, idx) => {
+                const gudang = getByIndex(idx);
+                return (
+                    <tr key={item.id} className="hover:bg-surface-800/50 transition-colors">
+                      <td className="py-2.5 px-3 font-mono text-xs text-brand-400">{item.aju || '—'}</td>
+                      <td className="py-2.5 px-3 font-mono text-xs text-surface-300">{item.mawb || '—'}</td>
+                      <td className="py-2.5 px-3 font-mono text-xs text-surface-300">{item.hawb || '—'}</td>
+                      <td>{item.airline_code ||
+                          <span className="italic text-surface-600">{gudang.airline_code}</span>}</td>
+                      <td>{item.ori_dest || <span className="italic text-surface-600">{gudang.ori_dest}</span>}</td>
+                      <td className="py-2.5 px-3 text-surface-300 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <Clock size={11} className="text-surface-500"/>
+                          {format(new Date(item.waktu_masuk), 'dd/MM/yy HH:mm')}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3">
+                    <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-900/30 text-green-400 border border-green-800/50">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
                       Selesai
                     </span>
-                    </td>
-                  </tr>
-              ))}
+                      </td>
+                    </tr>
+                );
+              })}
               {!stats?.recentData.length && (
                   <tr>
                     <td colSpan={7} className="text-center py-8 text-surface-500 text-sm">

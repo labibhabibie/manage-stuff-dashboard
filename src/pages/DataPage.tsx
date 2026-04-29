@@ -8,6 +8,7 @@ import {
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { supabase, InspeksiBarang } from '../lib/supabase'
+import { useGudangData } from '../hooks/useGudangData'
 
 const PAGE_SIZE = 20
 
@@ -31,6 +32,7 @@ export default function DataPage() {
   const selectAllRef = useRef<HTMLInputElement>(null)
   const [sortField, setSortField] = useState<string>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const { getByIndex } = useGudangData()
 
   useEffect(() => { fetchData() }, [page, filters, sortField, sortDir])
   useEffect(() => {
@@ -119,20 +121,25 @@ export default function DataPage() {
       'Shipper PIC Name', 'Shipper PIC Number',
       'Note Handling', 'Waktu Masuk',
     ]
-    const rows = data.map(d => [
-      d.aju || '',
-      d.mawb || '',
-      d.hawb || '',
-      d.tanggal_awb || '',
-      d.airline_code || '',
-      d.ori_dest || '',
-      d.jumlah_pieces ?? '',
-      d.weight || '',
-      d.shipper_pic_name || '',
-      d.shipper_pic_number || '',
-      d.note_handling || '',
-      format(new Date(d.waktu_masuk), 'dd/MM/yyyy HH:mm'),
-    ])
+    const rows = data.map((d, idx) => {
+      const globalIdx = (page - 1) * PAGE_SIZE + idx;
+      const gudang = getByIndex(globalIdx);
+
+      return [
+        d.aju || '',
+        d.mawb || '',
+        d.hawb || '',
+        d.tanggal_awb || gudang.tanggal_awb,
+        d.airline_code || gudang.airline_code,
+        d.ori_dest || gudang.ori_dest,
+        d.jumlah_pieces ?? '',
+        d.weight || gudang.weight,
+        d.shipper_pic_name || gudang.shipper_pic_name,
+        d.shipper_pic_number || gudang.shipper_pic_number,
+        d.note_handling || '',
+        format(new Date(d.waktu_masuk), 'dd/MM/yyyy HH:mm'),
+      ];
+    });
     const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -304,71 +311,95 @@ export default function DataPage() {
                           <p className="text-surface-400 text-sm">Tidak ada data ditemukan</p>
                         </td>
                       </tr>
-                  ) : data.map(item => (
-                      <tr key={item.id} className="hover:bg-surface-800/40 transition-colors group">
-                        <td className="py-3 px-4">
-                          <input
-                              type="checkbox"
-                              className="rounded border-surface-600 bg-surface-800 text-brand-500 cursor-pointer"
-                              checked={selected.includes(item.id)}
-                              onChange={(e) =>
-                                  setSelected(prev =>
-                                      e.target.checked ? [...prev, item.id] : prev.filter(i => i !== item.id)
-                                  )
-                              }
-                          />
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-mono text-xs text-brand-400 font-medium">{item.aju || '—'}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1.5 text-xs text-surface-300">
-                            <Clock size={11} className="text-surface-500" />
-                            {format(new Date(item.waktu_masuk), 'dd/MM/yyyy', { locale: id })}
-                            <span className="font-mono text-surface-500">{format(new Date(item.waktu_masuk), 'HH:mm')}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                      <span className="font-mono text-xs text-surface-200">
-                        {item.mawb || <span className="italic text-surface-600">—</span>}
-                      </span>
-                        </td>
-                        <td className="py-3 px-4">
-                      <span className="font-mono text-xs text-surface-200">
-                        {item.hawb || <span className="italic text-surface-600">—</span>}
-                      </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="space-y-0.5">
-                            <p className="text-xs text-surface-200 font-medium">
-                              {item.airline_code || <span className="italic text-surface-600">—</span>}
-                            </p>
-                            {item.ori_dest && (
-                                <p className="text-[10px] text-surface-500 font-mono">{item.ori_dest}</p>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="space-y-0.5">
-                            {item.mawb && barangCountMap[item.mawb] != null
-                                ? <p className="text-xs text-surface-300">{barangCountMap[item.mawb]} pcs</p>
-                                : <p className="text-xs text-surface-600 italic">—</p>
-                            }
-                            {item.weight && (
-                                <p className="text-[10px] text-surface-500">{item.weight} kg</p>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Link
-                              to={`/data/${item.id}`}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-brand-900/30 text-brand-400 border border-brand-800/60 hover:bg-brand-800/40 transition-colors"
-                          >
-                            <Eye size={12} /> Detail
-                          </Link>
-                        </td>
-                      </tr>
-                  ))}
+                  ) : data.map((item, idx) => {
+                    const globalIdx = (page - 1) * PAGE_SIZE + idx;
+                    const gudang = getByIndex(globalIdx);
+                    return (
+                        <tr key={item.id} className="hover:bg-surface-800/40 transition-colors group">
+                          <td className="py-3 px-4">
+                            <input
+                                type="checkbox"
+                                className="rounded border-surface-600 bg-surface-800 text-brand-500 cursor-pointer"
+                                checked={selected.includes(item.id)}
+                                onChange={(e) =>
+                                    setSelected(prev =>
+                                        e.target.checked
+                                            ? [...prev, item.id]
+                                            : prev.filter(i => i !== item.id)
+                                    )
+                                }
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono text-xs text-brand-400 font-medium">
+                              {item.aju || '—'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1.5 text-xs text-surface-300">
+                              <Clock size={11} className="text-surface-500" />
+                              {format(new Date(item.waktu_masuk), 'dd/MM/yyyy', { locale: id })}
+                              <span className="font-mono text-surface-500">
+                                {format(new Date(item.waktu_masuk), 'HH:mm')}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono text-xs text-surface-200">
+                              {item.mawb || <span className="italic text-surface-600">—</span>}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono text-xs text-surface-200">
+                              {item.hawb || <span className="italic text-surface-600">—</span>}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="space-y-0.5">
+                              <p className="text-xs text-surface-200 font-medium">
+                                {gudang.airline_code || (
+                                    <span className="italic text-surface-600">
+                                      {gudang.airline_code}
+                                    </span>
+                                )}
+                              </p>
+                              {gudang.ori_dest && (
+                                  <p className="text-[10px] text-surface-500 font-mono">
+                                    {gudang.ori_dest}
+                                  </p>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <div className="space-y-0.5">
+                              {item.mawb && barangCountMap[item.mawb] != null ? (
+                                  <p className="text-xs text-surface-300">
+                                    {barangCountMap[item.mawb]} pcs
+                                  </p>
+                              ) : (
+                                  <p className="text-xs text-surface-600 italic">—</p>
+                              )}
+
+                              {gudang.weight && (
+                                  <p className="text-[10px] text-surface-500">
+                                    {gudang.weight} kg
+                                  </p>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <Link
+                                to={`/data/${item.id}`}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-brand-900/30 text-brand-400 border border-brand-800/60 hover:bg-brand-800/40 transition-colors"
+                            >
+                              <Eye size={12} /> Detail
+                            </Link>
+                          </td>
+                        </tr>
+                    );
+                  })}
                   </tbody>
                 </table>
               </div>

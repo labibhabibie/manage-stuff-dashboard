@@ -10,6 +10,7 @@ import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { supabase, InspeksiBarang, Barang, logActivity } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
+import { useGudangForItem } from '../hooks/useGudangData';
 
 // ─── Outside component to prevent remount/focus loss ────────────────────────
 
@@ -44,19 +45,6 @@ const EditField = ({
     </div>
 );
 
-// SEMENTARA PENGGANTI API
-const MOCK_FALLBACK = {
-  mawb: '217-60010018',
-  airline_code: 'GA',
-  ori_dest: 'LAX-CGK',
-  weight: '5',
-  tanggal_awb: '2026-4-24',
-  kode_kantor: 'KANTOR BANTEN',
-  shipper_pic_name: 'Naufal',
-  shipper_pic_number: '+6262626262',
-  note_handling: 'Tidak ada instruksi penanganan.',
-}
-
 const MockField = ({ label, value, mock }: {
   label: string
   value: string | null | undefined
@@ -81,6 +69,7 @@ export default function DetailPage() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { gudang } = useGudangForItem(recordId)
 
   // Per-barang file state: { [barang_id]: { atas?: File, samping?: File } }
   const [fotoFiles, setFotoFiles] = useState<
@@ -119,16 +108,16 @@ export default function DetailPage() {
       setItem(data as InspeksiBarang);
       setEditData({
         aju: data.aju || "",
-        mawb: data.mawb || MOCK_FALLBACK.mawb,           // ← use mock if null
-        hawb: data.hawb || "",                            // ← hawb intentionally blank (can be null)
-        airline_code: data.airline_code || MOCK_FALLBACK.airline_code,
-        ori_dest: data.ori_dest || MOCK_FALLBACK.ori_dest,
-        weight: data.weight || MOCK_FALLBACK.weight,
-        tanggal_awb: data.tanggal_awb || MOCK_FALLBACK.tanggal_awb,
-        kode_kantor: data.kode_kantor || MOCK_FALLBACK.kode_kantor,
-        shipper_pic_name: data.shipper_pic_name || MOCK_FALLBACK.shipper_pic_name,
-        shipper_pic_number: data.shipper_pic_number || MOCK_FALLBACK.shipper_pic_number,
-        note_handling: data.note_handling || MOCK_FALLBACK.note_handling,
+        mawb: data.mawb || "",
+        hawb: data.hawb || "",
+        airline_code: data.airline_code || gudang.airline_code || "",
+        ori_dest: data.ori_dest || gudang.ori_dest || "",
+        weight: data.weight || gudang.weight || "",
+        tanggal_awb: data.tanggal_awb || gudang.tanggal_awb || "",
+        kode_kantor: data.kode_kantor || "BANTEN",
+        shipper_pic_name: data.shipper_pic_name || gudang.shipper_pic_name || "",
+        shipper_pic_number: data.shipper_pic_number || gudang.shipper_pic_number || "",
+        note_handling: data.note_handling || ""
       })
 
       // Fetch related barang rows
@@ -348,27 +337,27 @@ export default function DetailPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <EditField label="MAWB"          field="mawb"          value={editData.mawb}                    onChange={handleFieldChange} placeholder="Master Air Waybill" />
                     <EditField label="HAWB"          field="hawb"          value={editData.hawb}                    onChange={handleFieldChange} placeholder="House Air Waybill" />
-                    <MockField label="Airline Code"  value={item.airline_code}  mock={MOCK_FALLBACK.airline_code} />
-                    <MockField label="Ori / Dest"    value={item.ori_dest}      mock={MOCK_FALLBACK.ori_dest} />
+                    <MockField label="Airline Code" value={item.airline_code} mock={gudang.airline_code ?? '—'} />
+                    <MockField label="Ori / Dest"   value={item.ori_dest}     mock={gudang.ori_dest ?? '—'} />
                     <Field
                         label="Jumlah Barang"
                         value={barangList.length > 0 ? `${barangList.length} pcs` : null}
                     />
-                    <MockField label="Berat (Kg)"    value={item.weight}        mock={MOCK_FALLBACK.weight} />
-                    <MockField label="Tanggal AWB"   value={item.tanggal_awb}   mock={MOCK_FALLBACK.tanggal_awb} />
+                    <MockField label="Berat (Kg)"   value={item.weight}       mock={gudang.weight ?? '—'} />
+                    <MockField label="Tanggal AWB"  value={item.tanggal_awb}  mock={gudang.tanggal_awb ?? '—'} />
                   </div>
               ) : (
                   <div className="grid grid-cols-2 gap-4">
-                    <MockField label="MAWB"          value={item.mawb}          mock={MOCK_FALLBACK.mawb} />
+                    <Field label="MAWB"          value={item.mawb}          />
                     <Field label="HAWB"          value={item.hawb}          /> {/* Punya possibility ga punya hawb */}
-                    <MockField label="Airline Code"  value={item.airline_code}  mock={MOCK_FALLBACK.airline_code} />
-                    <MockField label="Ori / Dest"    value={item.ori_dest}      mock={MOCK_FALLBACK.ori_dest} />
+                    <MockField label="Airline Code" value={item.airline_code} mock={gudang.airline_code ?? '—'} />
+                    <MockField label="Ori / Dest"   value={item.ori_dest}     mock={gudang.ori_dest ?? '—'} />
                     <Field
                         label="Jumlah Barang"
                         value={barangList.length > 0 ? `${barangList.length} pcs` : null}
                     />
-                    <MockField label="Berat (Kg)"    value={item.weight}        mock={MOCK_FALLBACK.weight} />
-                    <MockField label="Tanggal AWB"   value={item.tanggal_awb}   mock={MOCK_FALLBACK.tanggal_awb} />
+                    <MockField label="Berat (Kg)"   value={item.weight}       mock={gudang.weight ?? '—'} />
+                    <MockField label="Tanggal AWB"  value={item.tanggal_awb}  mock={gudang.tanggal_awb ?? '—'} />
                   </div>
               )}
             </div>
@@ -547,7 +536,7 @@ export default function DetailPage() {
                     <p className="text-sm">
                       {item.kode_kantor
                           ? <span className="text-surface-200">{item.kode_kantor}</span>
-                          : <span className="text-surface-600 italic">{MOCK_FALLBACK.kode_kantor}</span>
+                          : <span className="text-surface-600 italic">BANTEN</span>
                       }
                     </p>
                 )}
@@ -577,7 +566,7 @@ export default function DetailPage() {
                         <User size={13} className="text-surface-400 shrink-0" />
                         {item.shipper_pic_name
                             ? <span className="text-surface-200">{item.shipper_pic_name}</span>
-                            : <span className="text-surface-600 italic">{MOCK_FALLBACK.shipper_pic_name}</span>
+                            : <span className="text-surface-600 italic">{gudang.shipper_pic_name ?? '—'}</span>
                         }
                       </div>
                     </div>
@@ -587,7 +576,7 @@ export default function DetailPage() {
                         <Phone size={13} className="text-surface-400 shrink-0" />
                         {item.shipper_pic_number
                             ? <span className="text-surface-200">{item.shipper_pic_number}</span>
-                            : <span className="text-surface-600 italic">{MOCK_FALLBACK.shipper_pic_number}</span>
+                            : <span className="text-surface-600 italic">{gudang.shipper_pic_number ?? '—'}</span>
                         }
                       </div>
                     </div>
@@ -611,7 +600,7 @@ export default function DetailPage() {
                   <p className="text-sm leading-relaxed">
                     {item.note_handling
                         ? <span className="text-surface-300">{item.note_handling}</span>
-                        : <span className="text-surface-600 italic">{MOCK_FALLBACK.note_handling}</span>
+                        : <span className="text-surface-600 italic">-</span>
                     }
                   </p>
               )}
