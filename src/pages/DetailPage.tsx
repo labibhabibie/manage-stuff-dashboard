@@ -11,6 +11,7 @@ import { id } from "date-fns/locale";
 import { supabase, InspeksiBarang, Barang, logActivity } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
 import { useGudangForItem } from '../hooks/useGudangData';
+import XraySubmitModal from '../components/XraySubmitModal'
 
 // ─── Outside component to prevent remount/focus loss ────────────────────────
 
@@ -70,6 +71,9 @@ export default function DetailPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const { gudang } = useGudangForItem(recordId)
+  const [xrayModal, setXrayModal] = useState<{ open: boolean; mode: 'kirim' | 'add' }>({
+    open: false, mode: 'kirim'
+  })
 
   // Per-barang file state: { [barang_id]: { atas?: File, samping?: File } }
   const [fotoFiles, setFotoFiles] = useState<
@@ -266,10 +270,10 @@ export default function DetailPage() {
           </div>
           {isAdmin && (
               <div className="flex gap-2">
-                <button
+                <button onClick={() => setXrayModal({ open: true, mode: 'kirim' })}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
                 >
-                  <Send size={14} /> Kirim Bea Cukai
+                  <Send size={14} /> Kirim Inspeksi ke Bea Cukai
                 </button>
                 {editing ? (
                     <>
@@ -374,7 +378,7 @@ export default function DetailPage() {
                     </div>
                     {!editing && (
                         <div className="relative group">
-                          <button
+                          <button onClick={() => setXrayModal({ open: true, mode: 'add' })}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
                           >
                             <Upload size={11} /> Kirim Foto ke Bea Cukai
@@ -607,6 +611,16 @@ export default function DetailPage() {
             </div>
           </div>
         </div>
+        <XraySubmitModal
+            open={xrayModal.open}
+            onClose={() => setXrayModal(m => ({ ...m, open: false }))}
+            mode={xrayModal.mode}
+            nomorAju={item.aju ?? ''}
+            nomorBlAwb={item.mawb ?? item.hawb ?? ''}
+            tanggalBlAwb={item.tanggal_awb ?? editData.tanggal_awb ?? ''}
+            kodeKantor={item.kode_kantor ?? editData.kode_kantor ?? ''}
+            barangList={barangList}   // ← add this
+        />
       </div>
   );
 }

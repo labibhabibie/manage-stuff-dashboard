@@ -12,6 +12,7 @@ import { id } from 'date-fns/locale'
 import { supabase, InspeksiBarang } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useGudangData } from '../hooks/useGudangData'
+import XraySubmissionsWidget from '../components/XraySubmissionsWidget'
 
 type Stats = {
   total: number
@@ -267,6 +268,7 @@ export default function DashboardPage() {
             </table>
           </div>
         </div>
+        <XraySubmissionsWidget />
       </div>
   )
 }
