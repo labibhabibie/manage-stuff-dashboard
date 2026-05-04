@@ -32,13 +32,13 @@ export type XrayResponse = {
 // ─── Upload images to Supabase Storage and return public URLs ─────────────────
 
 async function uploadImagesToStorage(
-    nomorAju: string,
+    nomorBlawb: string,
     images: File[]
 ): Promise<{ url: string; name: string }[]> {
     const results: { url: string; name: string }[] = []
 
     for (const file of images) {
-        const path = `xray/${nomorAju}/${Date.now()}_${file.name}`
+        const path = `mockingBeacukai/${nomorBlawb}/${Date.now()}_${file.name}`
         const { data, error } = await supabase.storage
             .from('foto-xray')
             .upload(path, file, { upsert: true })
@@ -88,11 +88,11 @@ export async function kirimFotoXray(payload: XraySubmitPayload): Promise<XrayRes
 
     // ── MOCK IMPLEMENTATION ──────────────────────────────────────────────────────
 
-    // Check: does a submission already exist for this nomorAju?
+    // Check: does a submission already exist for this nomorBlawb?
     const { data: existing } = await supabase
         .from('beacukai_xray_submissions')
         .select('id')
-        .eq('nomor_aju', payload.nomorAju)
+        .eq('nomor_blawb', payload.nomorBlAwb)
         .maybeSingle()
 
     if (existing) {
@@ -107,7 +107,7 @@ export async function kirimFotoXray(payload: XraySubmitPayload): Promise<XrayRes
     }
 
     // Upload images to storage
-    const uploaded = await uploadImagesToStorage(payload.nomorAju, payload.images)
+    const uploaded = await uploadImagesToStorage(payload.nomorBlAwb, payload.images)
 
     if (uploaded.length === 0) {
         return {
@@ -207,7 +207,7 @@ export async function addFotoXray(payload: XraySubmitPayload): Promise<XrayRespo
     const { data: existing } = await supabase
         .from('beacukai_xray_submissions')
         .select('id, npwp_pemberitahu, total_foto')
-        .eq('nomor_aju', payload.nomorAju)
+        .eq('nomor_blawb', payload.nomorBlAwb)
         .maybeSingle()
 
     if (!existing) {
@@ -221,7 +221,7 @@ export async function addFotoXray(payload: XraySubmitPayload): Promise<XrayRespo
     }
 
     // Upload new images
-    const uploaded = await uploadImagesToStorage(payload.nomorAju, payload.images)
+    const uploaded = await uploadImagesToStorage(payload.nomorBlAwb, payload.images)
 
     if (uploaded.length === 0) {
         return {
@@ -269,13 +269,13 @@ export async function addFotoXray(payload: XraySubmitPayload): Promise<XrayRespo
     }
 }
 
-// ─── Helper: check if submission exists for an nomorAju ──────────────────────
+// ─── Helper: check if submission exists for an nomorBlawb ──────────────────────
 
-export async function checkSubmissionExists(nomorAju: string): Promise<boolean> {
+export async function checkSubmissionExists(nomorBlAwb: string): Promise<boolean> {
     const { data } = await supabase
         .from('beacukai_xray_submissions')
         .select('id')
-        .eq('nomor_aju', nomorAju)
+        .eq('nomor_blawb', nomorBlAwb)
         .maybeSingle()
     return !!data
 }

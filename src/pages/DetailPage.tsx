@@ -381,7 +381,7 @@ export default function DetailPage() {
                           <button onClick={() => setXrayModal({ open: true, mode: 'add' })}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
                           >
-                            <Upload size={11} /> Kirim Foto ke Bea Cukai
+                            <Upload size={11} /> Tambah Foto ke Bea Cukai
                           </button>
                           <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block z-10 w-56">
                             <div className="bg-surface-800 border border-surface-600 text-surface-200 text-xs rounded-lg px-3 py-2 leading-relaxed shadow-lg">

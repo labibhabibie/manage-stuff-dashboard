@@ -9,6 +9,7 @@ import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { supabase, InspeksiBarang } from '../lib/supabase'
 import { useGudangData } from '../hooks/useGudangData'
+import BulkXrayModal from '../components/BulkXrayModal'
 
 const PAGE_SIZE = 20
 
@@ -32,6 +33,7 @@ export default function DataPage() {
   const selectAllRef = useRef<HTMLInputElement>(null)
   const [sortField, setSortField] = useState<string>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [bulkModal, setBulkModal] = useState(false)
   const { getByIndex } = useGudangData()
 
   useEffect(() => { fetchData() }, [page, filters, sortField, sortDir])
@@ -197,13 +199,15 @@ export default function DataPage() {
                 </div>
             )}
             {selected.length > 0 ? (
-                <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">
+                <button
+                    onClick={() => setBulkModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                >
                   <Send size={14} /> Kirim {selected.length} ke Bea Cukai
-                  {/* Show a hint if selection spans multiple pages */}
                   {selected.length > PAGE_SIZE && (
-                      <span className="ml-1 text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">
-                        {Math.ceil(selected.length / PAGE_SIZE)} halaman
-                      </span>
+                    <span className="ml-1 text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">
+                      {Math.ceil(selected.length / PAGE_SIZE)} halaman
+                    </span>
                   )}
                 </button>
             ) : (
@@ -430,6 +434,12 @@ export default function DataPage() {
               </div>
           )}
         </div>
+        <BulkXrayModal
+            open={bulkModal}
+            onClose={() => setBulkModal(false)}
+            selectedIds={selected}
+            onDone={() => setSelected([])}   // clears checkboxes after done
+        />
       </div>
   )
 }

@@ -119,7 +119,7 @@ export default function XraySubmitModal({
     const submitLabel = isKirim ? 'Kirim Foto' : 'Tambah Foto'
 
     return (
-        <div className="inset-0 z-50 flex justify-center sticky top-0 p-4">
+        <div className="inset-0 z-50 flex justify-center fixed top-0 p-4">
             {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -173,7 +173,7 @@ export default function XraySubmitModal({
                             <div className="flex items-center gap-2 text-xs text-surface-400">
                                 <Loader2 size={12} className="animate-spin" /> Mengecek data...
                             </div>
-                        ) : alreadyExists ? (
+                        ) : !response?.success && alreadyExists ? (
                             <div className="flex items-start gap-2.5 p-3 bg-amber-900/20 border border-amber-800/50 rounded-lg">
                                 <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
                                 <div>
@@ -183,7 +183,7 @@ export default function XraySubmitModal({
                                     </p>
                                 </div>
                             </div>
-                        ) : (
+                        ) : !response?.success && (
                             <div className="flex items-center gap-2 p-3 bg-green-900/20 border border-green-800/50 rounded-lg">
                                 <CheckCircle2 size={14} className="text-green-400 shrink-0" />
                                 <p className="text-xs text-green-400">Siap dikirim — belum ada data sebelumnya</p>
@@ -227,7 +227,7 @@ export default function XraySubmitModal({
                     )}
 
                     {/* Image upload — hide after success */}
-                    {!response?.success && (
+                    { ((isKirim && !alreadyExists) || !isKirim) && !response?.success && (
                         <div>
                             <div className="flex items-center justify-between mb-2">
                                 <p className="text-xs font-semibold text-surface-400 uppercase tracking-wider flex items-center gap-1.5">
