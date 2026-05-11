@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Package, TrendingUp, Calendar, ArrowRight, Clock
+  Package, TrendingUp, Calendar, ChevronRight, ChevronLeft, Clock
 } from 'lucide-react'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, PieChart, Pie, Cell
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts'
 import { format, subDays, startOfDay } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { supabase, InspeksiBarang } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useGudangData } from '../hooks/useGudangData'
-import XraySubmissionsWidget from '../components/XraySubmissionsWidget'
 
 type Stats = {
   total: number
@@ -23,11 +22,14 @@ type Stats = {
   airlineBreakdown: { name: string; value: number; color: string }[]
 }
 
-const PALETTE = ['#14b8a6', '#60a5fa', '#c084fc', '#4ade80', '#f97316', '#f43f5e', '#94a3b8']
+const PALETTE = ['#1e3a5f', '#f97316', '#2563eb', '#eab308', '#a855f7', '#ec4899', '#94a3b8']
+
+const ITEMS_PER_PAGE = 12
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
   const { profile } = useAuth()
   const { getByIndex } = useGudangData()
 
@@ -45,7 +47,7 @@ export default function DashboardPage() {
 
       if (error || !data) {
         console.error('Supabase error:', error)
-        setStats({                          // ← always set stats, never leave as null
+        setStats({
           total: 0, today: 0, thisWeek: 0,
           recentData: [], dailyTrend: [], airlineBreakdown: []
         })
@@ -59,7 +61,7 @@ export default function DashboardPage() {
       const total = data.length
       const today = data.filter(d => new Date(d.created_at) >= todayStart).length
       const thisWeek = data.filter(d => new Date(d.created_at) >= weekStart).length
-      const recentData = data.slice(0, 8)
+      const recentData = data.slice(0, ITEMS_PER_PAGE)
 
       const dailyTrend = Array.from({ length: 7 }, (_, i) => {
         const day = subDays(now, 6 - i)
@@ -82,7 +84,7 @@ export default function DashboardPage() {
           .slice(0, 7)
           .map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }))
 
-      setStats({ total, today, thisWeek, recentData, dailyTrend, airlineBreakdown })  // ← now always reached
+      setStats({ total, today, thisWeek, recentData, dailyTrend, airlineBreakdown })
     } finally {
       setLoading(false)
     }
@@ -96,179 +98,306 @@ export default function DashboardPage() {
     return 'Selamat Malam'
   }
 
+  const RADIAN = Math.PI / 180;
+
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }) => {
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+    return (
+        <text
+            x={x}
+            y={y}
+            fill="white"
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={14}
+            fontWeight="normal"
+        >
+          {value}
+        </text>
+    );
+  };
+
   if (loading) return (
       <div className="flex items-center justify-center h-64">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-surface-400 text-sm">Memuat data...</p>
+          <div className="w-8 h-8 border-2 border-blue-900 border-t-transparent rounded-full animate-spin" />
+          <p className="text-gray-400 text-sm">Memuat data...</p>
         </div>
       </div>
   )
 
+  const totalPages = Math.ceil((stats?.total ?? 0) / ITEMS_PER_PAGE)
+
+  const statCards = [
+    {
+      label: 'Total Inspeksi',
+      value: stats?.total ?? 0,
+      icon: Package,
+      iconBg: 'bg-blue-200',
+      iconColor: 'text-blue-900',
+      sub: 'Total seluruh inspeksi',
+    },
+    {
+      label: 'Hari Ini',
+      value: stats?.today ?? 0,
+      icon: Calendar,
+      iconBg: 'bg-amber-100',
+      iconColor: 'text-orange-500',
+      sub: 'Jumlah inspeksi hari ini',
+    },
+    {
+      label: '7 Hari Terakhir',
+      value: stats?.thisWeek ?? 0,
+      icon: TrendingUp,
+      iconBg: 'bg-green-300',
+      iconColor: 'text-green-700',
+      sub: 'Jumlah inspeksi 7 hari terakhir',
+    },
+  ]
+
   return (
-      <div className="space-y-6 max-w-7xl">
-        {/* Greeting */}
-        <div>
-          <h2 className="text-xl font-display font-bold text-white">
-            {greeting()}, {profile?.full_name?.split(' ')[0] || 'Pengguna'} 👋
-          </h2>
-          <p className="text-surface-400 text-sm mt-1">
-            {format(new Date(), "EEEE, dd MMMM yyyy", { locale: id })} — Berikut ringkasan data inspeksi
-          </p>
+      <div className="space-y-4">
+
+        {/* ── Greeting ── */}
+        <div className="flex items-end gap-16 h-16">
+          <div className="flex flex-col justify-center gap-0.5">
+            <h2 className="text-xl font-bold text-gray-600 drop-shadow-sm">
+              {greeting()}, {profile?.full_name || profile?.email || 'Pengguna'} 👋
+            </h2>
+            <p className="text-sm text-gray-600 drop-shadow-sm">
+              {format(new Date(), "EEEE, dd MMMM yyyy", { locale: id })} — Berikut ringkasan data inspeksi
+            </p>
+          </div>
         </div>
 
-        {/* Stats cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {[
-            {
-              label: 'Total Inspeksi',
-              value: stats?.total ?? 0,
-              icon: Package,
-              color: 'brand: text-brand-400 bg-brand-900/30 border-brand-800/60',
-              sub: 'Semua data',
-            },
-            {
-              label: 'Hari Ini',
-              value: stats?.today ?? 0,
-              icon: Calendar,
-              color: 'blue: text-blue-400 bg-blue-900/30 border-blue-800/60',
-              sub: 'Sejak 00:00',
-            },
-            {
-              label: 'Minggu Ini',
-              value: stats?.thisWeek ?? 0,
-              icon: TrendingUp,
-              color: 'green: text-green-400 bg-green-900/30 border-green-800/60',
-              sub: '7 hari terakhir',
-            },
-          ].map(card => {
+        {/* ── Stat Cards ── */}
+        <div className="bg-slate-100 rounded-lg border border-gray-300 flex divide-x divide-gray-300">
+          {statCards.map((card) => {
             const Icon = card.icon
-            const [, cls] = card.color.split(': ')
             return (
-                <div key={card.label} className="card p-5">
-                  <div className={`inline-flex p-2 rounded-lg border mb-3 ${cls}`}>
-                    <Icon size={18} />
+                <div key={card.label} className="flex-1 pl-4 pr-6 pt-4 pb-5 flex items-start gap-1.5">
+                  <div className={`p-2.5 ${card.iconBg} rounded-lg flex items-center justify-center`}>
+                    <Icon size={32} className={card.iconColor} />
                   </div>
-                  <p className="text-2xl font-display font-bold text-white">
+                  <div className="flex-1 flex flex-col gap-0.5">
+                    <div className="p-0.5 flex items-center">
+                  <span className="text-xl font-bold text-gray-800">
                     {card.value.toLocaleString('id-ID')}
-                  </p>
-                  <p className="text-xs font-medium text-surface-300 mt-0.5">{card.label}</p>
-                  <p className="text-xs text-surface-500 mt-0.5">{card.sub}</p>
+                  </span>
+                    </div>
+                    <div className="p-0.5 flex items-center">
+                      <span className="text-lg font-medium text-gray-500">{card.label}</span>
+                    </div>
+                    <div className="p-0.5 flex items-center">
+                      <span className="text-sm font-medium text-gray-800">{card.sub}</span>
+                    </div>
+                  </div>
                 </div>
             )
           })}
         </div>
 
-        {/* Charts */}
-        <div className="grid lg:grid-cols-3 gap-4">
-          {/* Trend chart */}
-          <div className="card p-5 lg:col-span-2">
-            <h3 className="text-sm font-semibold text-surface-200 mb-4">Tren Inspeksi 7 Hari Terakhir</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={stats?.dailyTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip
-                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', fontSize: '12px' }}
-                    labelStyle={{ color: '#94a3b8' }}
-                    itemStyle={{ color: '#2dd4bf' }}
+        {/* ── Charts Row ── */}
+        <div className="flex gap-4">
+
+          {/* Trend Area Chart */}
+          <div className="w-full px-6 py-5 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2.5">
+            <h3 className="text-xl font-semibold text-gray-600">
+              Tren Inspeksi 7 Hari kebelakang
+            </h3>
+            <ResponsiveContainer width="100%" height={320}>
+              <AreaChart data={stats?.dailyTrend} margin={{ top: 8, right: 48, left: 24, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#1e3a5f" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#1e3a5f" stopOpacity={0.1} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis
+                    dataKey="date"
+                    tick={{ fill: '#9ca3af', fontSize: 12, fontFamily: 'Inter' }}
+                    axisLine={false}
+                    tickLine={false}
                 />
-                <Line type="monotone" dataKey="count" stroke="#14b8a6" strokeWidth={2} dot={{ fill: '#14b8a6', r: 4 }} name="Inspeksi" />
-              </LineChart>
+                <YAxis
+                    tick={{ fill: '#9ca3af', fontSize: 14, fontFamily: 'Inter' }}
+                    axisLine={false}
+                    tickLine={false}
+                    allowDecimals={false}
+                />
+                <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      boxShadow: '0 4px 4px rgba(0,0,0,0.25)',
+                    }}
+                    labelStyle={{ color: '#4b5563' }}
+                    itemStyle={{ color: '#1e3a5f' }}
+                />
+                <Area
+                    type="monotone"
+                    dataKey="count"
+                    stroke="#1e3a5f"
+                    strokeWidth={5}
+                    fill="url(#trendGradient)"
+                    dot={{ fill: '#1e3a5f', r: 5, stroke: '#e2e8f0', strokeWidth: 2 }}
+                    activeDot={{ r: 6 }}
+                    name="Inspeksi"
+                />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Airline breakdown pie */}
-          <div className="card p-5">
-            <h3 className="text-sm font-semibold text-surface-200 mb-4">Distribusi Airline</h3>
-            <ResponsiveContainer width="100%" height={160}>
-              <PieChart>
-                <Pie
-                    data={stats?.airlineBreakdown}
-                    cx="50%" cy="50%"
-                    innerRadius={50} outerRadius={75}
-                    paddingAngle={3} dataKey="value"
-                >
-                  {stats?.airlineBreakdown.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', fontSize: '12px' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="space-y-1.5 mt-2">
+          {/* Airline Pie Chart */}
+          <div className="w-full p-4 bg-slate-100 rounded-lg border border-gray-300 flex items-start justify-center gap-4 relative">
+            <div className="flex flex-col items-start">
+              <div className="p-px mb-1 absolute top-4 left-8">
+                <span className="text-xl font-semibold text-gray-600">Distribusi Airline</span>
+              </div>
+              <ResponsiveContainer width={384} height={384}>
+                <PieChart>
+                  <Pie
+                      data={stats?.airlineBreakdown}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={0}
+                      outerRadius={140}
+                      dataKey="value"
+                      paddingAngle={0}
+                      label={renderCustomLabel}
+                      labelLine={false}
+                  >
+                    {stats?.airlineBreakdown.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+
+                  <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                      }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Legend */}
+            <div className="w-32 pt-20 pb-px flex flex-col gap-0.5">
               {stats?.airlineBreakdown.map(t => (
-                  <div key={t.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
-                      <span className="text-surface-400">{t.name}</span>
-                    </div>
-                    <span className="font-mono text-surface-300">{t.value}</span>
+                  <div key={t.name} className="p-px flex items-center gap-1.5">
+                    <div className="w-4 h-4 rounded" style={{ backgroundColor: t.color }} />
+                    <span className="text-sm text-gray-600">{t.name}</span>
                   </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Recent data */}
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-surface-200">Inspeksi Terbaru</h3>
-            <Link to="/data" className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1 transition-colors">
-              Lihat semua <ArrowRight size={12} />
+        {/* ── Recent Inspections Table ── */}
+        <div className="w-full flex flex-col border border-gray-300 rounded-lg overflow-hidden">
+
+          {/* Table Header Bar */}
+          <div className="h-16 px-4 bg-slate-100 border-b border-gray-300 flex justify-between items-center">
+            <span className="text-xl font-semibold text-gray-600">Inspeksi Terbaru</span>
+            <Link
+                to="/data"
+                className="flex items-center gap-0.5 text-blue-900 font-medium hover:underline shrink-0"
+            >
+              <span className="text-base">Lihat Semua</span>
+              <ChevronRight size={20} className="text-blue-900" />
             </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-              <tr className="border-b border-surface-700">
-                {['No AJU', 'MAWB', 'HAWB', 'Airline', 'Rute', 'Waktu Masuk', 'Status'].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs font-medium text-surface-400 uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-800">
-              {stats?.recentData.map((item, idx) => {
-                const gudang = getByIndex(idx);
-                return (
-                    <tr key={item.id} className="hover:bg-surface-800/50 transition-colors">
-                      <td className="py-2.5 px-3 font-mono text-xs text-brand-400">{item.aju || '—'}</td>
-                      <td className="py-2.5 px-3 font-mono text-xs text-surface-300">{item.mawb || '—'}</td>
-                      <td className="py-2.5 px-3 font-mono text-xs text-surface-300">{item.hawb || '—'}</td>
-                      <td>{item.airline_code ||
-                          <span className="italic text-surface-600">{gudang.airline_code}</span>}</td>
-                      <td>{item.ori_dest || <span className="italic text-surface-600">{gudang.ori_dest}</span>}</td>
-                      <td className="py-2.5 px-3 text-surface-300 text-xs">
-                        <div className="flex items-center gap-1.5">
-                          <Clock size={11} className="text-surface-500"/>
-                          {format(new Date(item.waktu_masuk), 'dd/MM/yy HH:mm')}
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3">
-                    <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-900/30 text-green-400 border border-green-800/50">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
-                      Selesai
-                    </span>
-                      </td>
-                    </tr>
-                );
-              })}
-              {!stats?.recentData.length && (
-                  <tr>
-                    <td colSpan={7} className="text-center py-8 text-surface-500 text-sm">
-                      Belum ada data inspeksi
-                    </td>
-                  </tr>
-              )}
-              </tbody>
-            </table>
+
+          {/* Column Headers */}
+          <div className="h-16 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2">
+            {[
+              { label: 'NO. AJU',       flex: 'flex-[2] min-w-[100px]' },
+              { label: 'WAKTU MASUK',   flex: 'flex-[2] min-w-[120px]' },
+              { label: 'NO. MAWB',      flex: 'flex-[2] min-w-[80px]'  },
+              { label: 'NO. HAWB',      flex: 'flex-[2] min-w-[80px]'  },
+              { label: 'AIRLINE - RUTE',flex: 'flex-[2] min-w-[100px]' },
+              { label: 'PIECES',        flex: 'flex-1 min-w-[60px]'    },
+              { label: 'STATUS',        flex: 'flex-[1.5] min-w-[80px]'},
+            ].map(col => (
+                <div key={col.label} className={`${col.flex} h-6 p-0.5 flex items-center`}>
+                  <span className="text-base font-semibold text-gray-800 truncate">{col.label}</span>
+                </div>
+            ))}
           </div>
+
+          {/* Rows */}
+          {stats?.recentData.map((item, idx) => {
+            const gudang = getByIndex(idx)
+            return (
+                <div
+                    key={item.id}
+                    className="h-14 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                >
+                  {/* NO AJU */}
+                  <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+                    <span className="text-sm font-semibold text-blue-900 truncate">{item.aju || '—'}</span>
+                  </div>
+                  {/* WAKTU MASUK */}
+                  <div className="flex-[2] min-w-[120px] min-w-0 flex items-center gap-1">
+          <span className="text-sm font-semibold text-gray-600 shrink-0">
+            {format(new Date(item.waktu_masuk), 'dd/MM/yyyy')}
+          </span>
+                    <span className="text-sm text-gray-600 shrink-0">
+            {format(new Date(item.waktu_masuk), 'HH:mm')}
+          </span>
+                  </div>
+                  {/* MAWB */}
+                  <div className="flex-[2] min-w-[80px] min-w-0 flex items-center">
+                    <span className="text-sm font-semibold text-gray-600 truncate">{item.mawb || '—'}</span>
+                  </div>
+                  {/* HAWB */}
+                  <div className="flex-[2] min-w-[80px] min-w-0 flex items-center">
+                    <span className="text-sm font-semibold text-gray-600 truncate">{item.hawb || '—'}</span>
+                  </div>
+                  {/* AIRLINE - RUTE */}
+                  <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+          <span className="text-sm font-semibold text-gray-600 truncate">
+            {item.airline_code
+                ? `${item.airline_code} / ${item.ori_dest || '—'}`
+                : gudang
+                    ? `${gudang.airline_code} / ${gudang.ori_dest}`
+                    : '—'}
+          </span>
+                  </div>
+                  {/* PIECES */}
+                  <div className="flex-1 min-w-[60px] min-w-0 flex items-center gap-1">
+          <span className="text-sm font-semibold text-gray-600">
+            {item.jumlah_pieces ?? '—'}
+          </span>
+                    {item.jumlah_pieces != null && (
+                        <span className="text-sm text-gray-600 shrink-0">Pcs</span>
+                    )}
+                  </div>
+                  {/* STATUS */}
+                  <div className="flex-[1.5] min-w-[80px] min-w-0 flex items-center">
+                    <div className="px-2 py-0.5 bg-green-300 rounded-full flex items-center gap-0.5 shadow-sm">
+                      <div className="w-3 h-3 bg-green-600 rounded-full shrink-0" />
+                      <span className="text-xs font-semibold text-green-600 whitespace-nowrap">Selesai</span>
+                    </div>
+                  </div>
+                </div>
+            )
+          })}
+
+          {!stats?.recentData.length && (
+              <div className="py-8 text-center text-sm text-gray-500 bg-slate-100">
+                Belum ada data inspeksi
+              </div>
+          )}
         </div>
-        <XraySubmissionsWidget />
       </div>
   )
 }

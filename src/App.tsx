@@ -7,6 +7,7 @@ import DataPage from './pages/DataPage'
 import DetailPage from './pages/DetailPage'
 import AktivitasPage from './pages/AktivitasPage'
 import UsersPage from './pages/UsersPage'
+import BeacukaiPage from './pages/BeacukaiPage'
 
 function ProtectedRoute({ children, requireAdmin, requireSuperAdmin }: {
   children: React.ReactNode
@@ -38,6 +39,7 @@ function AppRoutes() {
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/data" element={<ProtectedRoute><DataPage /></ProtectedRoute>} />
       <Route path="/data/:id" element={<ProtectedRoute><DetailPage /></ProtectedRoute>} />
+      <Route path="/beacukai" element={<ProtectedRoute><BeacukaiPage /></ProtectedRoute>} />
       <Route path="/aktivitas" element={<ProtectedRoute requireAdmin><AktivitasPage /></ProtectedRoute>} />
       <Route path="/users" element={<ProtectedRoute requireSuperAdmin><UsersPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

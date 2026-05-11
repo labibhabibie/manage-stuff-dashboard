@@ -83,6 +83,7 @@ src/
 │   ├── DashboardPage.tsx   # Dashboard dengan chart & statistik
 │   ├── DataPage.tsx        # Tabel data inspeksi + filter + export
 │   ├── DetailPage.tsx      # Detail + edit data inspeksi
+│   ├── BeacukaiPage.tsx    # Tabel data pengiriman ke Beacukai
 │   ├── AktivitasPage.tsx   # Log aktivitas user
 │   └── UsersPage.tsx       # Manajemen user (Super Admin)
 └── index.css               # Global styles + Tailwind
