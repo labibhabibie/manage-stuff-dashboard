@@ -344,7 +344,7 @@ export default function DetailPage() {
                                 onClick={() => canAddFoto && setXrayModal({ open: true, mode: 'add' })}
                                 className={`h-11 px-4 rounded-lg shadow-[2px_2px_12px_0px_rgba(0,0,0,0.12)] flex items-center gap-1.5 transition-colors ${
                                     canAddFoto
-                                        ? 'bg-blue-900 hover:bg-blue-800 cursor-pointer'
+                                        ? 'bg-yellow-900 hover:bg-yellow-800 cursor-pointer'
                                         : 'bg-gray-300 cursor-not-allowed opacity-60'
                                 }`}
                             >
@@ -356,7 +356,7 @@ export default function DetailPage() {
                         ) : (
                             <button
                                 onClick={() => setXrayModal({ open: true, mode: 'kirim' })}
-                                className="h-11 px-4 bg-yellow-900 rounded-lg shadow-[2px_2px_12px_0px_rgba(0,0,0,0.12)] flex items-center gap-1.5 hover:bg-yellow-800 transition-colors"
+                                className="h-11 px-4 bg-blue-900 rounded-lg shadow-[2px_2px_12px_0px_rgba(0,0,0,0.12)] flex items-center gap-1.5 hover:bg-blue-800 transition-colors"
                             >
                                 <Send size={18} className="text-slate-100 shrink-0" />
                                 <span className="text-base font-semibold text-slate-100 whitespace-nowrap">Kirim data ke Bea Cukai</span>
