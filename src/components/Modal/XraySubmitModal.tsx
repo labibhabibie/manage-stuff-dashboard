@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import {
     X, Send, Loader2, CheckCircle2,
-    AlertTriangle, Image, FileText, Plane,
+    AlertTriangle, Image, Plane, CheckCheck,
 } from 'lucide-react'
 import {
     kirimFotoXray,
     addFotoXray,
+    getFotoXray,
     checkSubmissionExists,
     XrayResponse,
+    XrayFotoDetail,
 } from '../../lib/beacukaiService.ts'
 import { Barang } from '../../lib/supabase.ts'
 
@@ -24,18 +26,40 @@ type Props = {
     barangList: Barang[]
 }
 
+// Just grab the last path segment, strip any query string
+function fileNameFromUrl(url: string): string {
+    return url.split('/').pop()?.split('?')[0] || ''
+}
+
 export default function XraySubmitModal({
                                             open, onClose, mode,
                                             nomorAju, nomorBlAwb, tanggalBlAwb, kodeKantor,
                                             barangList,
                                         }: Props) {
-    const [selectedUrls, setSelectedUrls]       = useState<Set<string>>(new Set())
-    const [submitting, setSubmitting]           = useState(false)
-    const [response, setResponse]               = useState<XrayResponse | null>(null)
-    const [alreadyExists, setAlreadyExists]     = useState<boolean | null>(null)
-    const [checkingExists, setCheckingExists]   = useState(false)
+    const [selectedUrls, setSelectedUrls]           = useState<Set<string>>(new Set())
+    const [submitting, setSubmitting]               = useState(false)
+    const [response, setResponse]                   = useState<XrayResponse | null>(null)
+    const [alreadyExists, setAlreadyExists]         = useState<boolean | null>(null)
+    const [checkingExists, setCheckingExists]       = useState(false)
+    // Filenames already sent to Bea Cukai (for 'add' mode)
+    const [sentFileNames, setSentFileNames]         = useState<Set<string>>(new Set())
+    const [loadingSentFiles, setLoadingSentFiles]   = useState(false)
+
+    const isKirim     = mode === 'kirim'
+    const submitLabel = isKirim ? 'Kirim Foto' : 'Tambah Foto'
+
+    // All photo URLs across all barang
+    const allUrls = barangList.flatMap(b => [
+        b.foto_url_atas    ? { url: b.foto_url_atas,    label: `${b.id_barang} — Atas`    } : null,
+        b.foto_url_samping ? { url: b.foto_url_samping, label: `${b.id_barang} — Samping` } : null,
+    ]).filter(Boolean) as { url: string; label: string }[]
+
+    // In 'add' mode, exclude already-sent photos from selectable set
+    const selectableUrls = allUrls.filter(f => !sentFileNames.has(fileNameFromUrl(f.url)))
+    const allSelected    = selectableUrls.length > 0 && selectableUrls.every(f => selectedUrls.has(f.url))
 
     const toggleUrl = (url: string) => {
+        if (sentFileNames.has(fileNameFromUrl(url))) return // guard: can't select sent photos
         setSelectedUrls(prev => {
             const next = new Set(prev)
             next.has(url) ? next.delete(url) : next.add(url)
@@ -43,18 +67,12 @@ export default function XraySubmitModal({
         })
     }
 
-    const allUrls = barangList.flatMap(b => [
-        b.foto_url_atas    ? { url: b.foto_url_atas,    label: `${b.id_barang} — Atas`    } : null,
-        b.foto_url_samping ? { url: b.foto_url_samping, label: `${b.id_barang} — Samping` } : null,
-    ]).filter(Boolean) as { url: string; label: string }[]
-
-    const allSelected = allUrls.length > 0 && allUrls.every(f => selectedUrls.has(f.url))
-
     const toggleAll = () => {
         if (allSelected) setSelectedUrls(new Set())
-        else setSelectedUrls(new Set(allUrls.map(f => f.url)))
+        else setSelectedUrls(new Set(selectableUrls.map(f => f.url)))
     }
 
+    // Check if submission exists (kirim mode)
     useEffect(() => {
         if (!open || mode !== 'kirim' || !nomorBlAwb) return
         setCheckingExists(true)
@@ -64,8 +82,25 @@ export default function XraySubmitModal({
         })
     }, [open, nomorBlAwb, mode])
 
+    // Fetch already-sent filenames (add mode)
     useEffect(() => {
-        if (open) setResponse(null)
+        if (!open || mode !== 'add' || !nomorBlAwb) return
+        setLoadingSentFiles(true)
+        getFotoXray({ nomorBlAwb, tanggalBlAwb, kodeKantor }).then(res => {
+            if (res.success && res.data?.detail) {
+                setSentFileNames(new Set(res.data.detail.map((d: XrayFotoDetail) => d.namaFile)))
+            }
+            setLoadingSentFiles(false)
+        })
+    }, [open, nomorBlAwb, mode])
+
+    // Reset on open
+    useEffect(() => {
+        if (open) {
+            setResponse(null)
+            setSelectedUrls(new Set())
+            setSentFileNames(new Set())
+        }
     }, [open])
 
     const handleSubmit = async () => {
@@ -75,7 +110,7 @@ export default function XraySubmitModal({
         const files: File[] = []
         for (const url of Array.from(selectedUrls)) {
             try {
-                const res = await fetch(url)
+                const res  = await fetch(url)
                 const blob = await res.blob()
                 files.push(new File([blob], url.split('/').pop() || 'foto.jpg', { type: blob.type }))
             } catch (e) {
@@ -93,8 +128,6 @@ export default function XraySubmitModal({
 
     if (!open) return null
 
-    const isKirim    = mode === 'kirim'
-    const submitLabel = isKirim ? 'Kirim Foto' : 'Tambah Foto'
     const showPhotoSection = ((isKirim && !alreadyExists) || !isKirim) && !response?.success
 
     return (
@@ -117,8 +150,11 @@ export default function XraySubmitModal({
                         </button>
                     </div>
                     <span className="text-base font-normal text-gray-800">
-        {selectedUrls.size} foto dipilih · {allUrls.length} total foto tersedia
-      </span>
+                        {selectedUrls.size} foto dipilih · {allUrls.length} total foto tersedia
+                        {mode === 'add' && sentFileNames.size > 0 && (
+                            <span className="ml-1 text-amber-600">· {sentFileNames.size} sudah terkirim</span>
+                        )}
+                    </span>
                 </div>
 
                 {/* ── Scrollable body ── */}
@@ -131,7 +167,6 @@ export default function XraySubmitModal({
                             <span className="text-lg font-semibold text-gray-800">Data Pengirim</span>
                         </div>
                         <div className="flex flex-col sm:flex-row items-start gap-4">
-                            {/* Left column */}
                             <div className="flex-1 min-w-0 sm:border-r sm:border-gray-300 sm:pr-4 flex flex-col gap-4">
                                 <div className="flex flex-col gap-0.5">
                                     <span className="text-base font-semibold text-gray-500">Nomor AJU</span>
@@ -142,7 +177,6 @@ export default function XraySubmitModal({
                                     <span className="text-lg font-semibold text-gray-800">{tanggalBlAwb || '—'}</span>
                                 </div>
                             </div>
-                            {/* Right column */}
                             <div className="flex-1 min-w-0 flex flex-col gap-4">
                                 <div className="flex flex-col gap-0.5">
                                     <span className="text-base font-semibold text-gray-500">Nomor BL/AWB</span>
@@ -156,7 +190,7 @@ export default function XraySubmitModal({
                         </div>
                     </div>
 
-                    {/* Exists / ready status banner */}
+                    {/* Kirim mode: exists / ready banner */}
                     {isKirim && (
                         checkingExists ? (
                             <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
@@ -169,18 +203,41 @@ export default function XraySubmitModal({
                                 <div className="flex flex-col gap-1 min-w-0">
                                     <span className="text-base font-medium text-amber-600">Data sudah pernah dikirim</span>
                                     <span className="text-sm font-normal text-amber-500">
-                Nomor BL/AWB ini sudah memiliki submission. Gunakan tombol "Tambah Foto" untuk menambah foto baru.
-              </span>
+                                        Nomor BL/AWB ini sudah memiliki submission. Gunakan tombol "Tambah Foto" untuk menambah foto baru.
+                                    </span>
                                 </div>
                             </div>
                         ) : !response?.success && (
                             <div className="p-4 bg-emerald-100 rounded-lg border border-green-600 flex items-center gap-4">
                                 <CheckCircle2 size={24} className="text-green-600 shrink-0" />
                                 <span className="text-base font-normal text-green-600">
-              Siap dikirim, belum pernah dikirim sebelumnya
-            </span>
+                                    Siap dikirim, belum pernah dikirim sebelumnya
+                                </span>
                             </div>
                         )
+                    )}
+
+                    {/* Add mode: loading sent files banner */}
+                    {!isKirim && loadingSentFiles && (
+                        <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
+                            <Loader2 size={16} className="animate-spin text-gray-400 shrink-0" />
+                            <span className="text-base font-normal text-gray-500">Mengecek foto yang sudah terkirim...</span>
+                        </div>
+                    )}
+
+                    {/* Add mode: summary of already-sent photos */}
+                    {!isKirim && !loadingSentFiles && sentFileNames.size > 0 && !response?.success && (
+                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-300 flex items-start gap-3">
+                            <CheckCheck size={20} className="text-blue-600 shrink-0 mt-0.5" />
+                            <div className="flex flex-col gap-1 min-w-0">
+                                <span className="text-base font-medium text-blue-700">
+                                    {sentFileNames.size} foto sudah terkirim sebelumnya
+                                </span>
+                                <span className="text-sm font-normal text-blue-600">
+                                    Foto yang sudah dikirim ditandai dan tidak dapat dipilih kembali.
+                                </span>
+                            </div>
+                        </div>
                     )}
 
                     {/* Response result */}
@@ -193,8 +250,8 @@ export default function XraySubmitModal({
                                     ? <CheckCircle2 size={18} className="text-green-600 shrink-0" />
                                     : <AlertTriangle size={18} className="text-red-600 shrink-0" />}
                                 <span className={`text-base font-semibold ${response.success ? 'text-green-600' : 'text-red-600'}`}>
-              {response.message}
-            </span>
+                                    {response.message}
+                                </span>
                             </div>
                             {response.data && (
                                 <div className="space-y-1 mt-2">
@@ -226,7 +283,7 @@ export default function XraySubmitModal({
                                     <Image size={18} className="text-blue-900 shrink-0" />
                                     <span className="text-base font-semibold text-blue-900">Pilih Foto X-ray</span>
                                 </div>
-                                {allUrls.length > 0 && (
+                                {selectableUrls.length > 0 && (
                                     <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
                                         <input
                                             type="checkbox"
@@ -239,11 +296,18 @@ export default function XraySubmitModal({
                                 )}
                             </div>
 
-                            {/* No photos */}
+                            {/* No photos at all */}
                             {allUrls.length === 0 ? (
                                 <div className="rounded-lg border border-dashed border-gray-300 p-6 flex flex-col items-center justify-center gap-2">
                                     <Image size={24} className="text-gray-300 opacity-60" />
                                     <p className="text-sm text-gray-400 italic">Tidak ada foto tersedia pada barang ini</p>
+                                </div>
+                            ) : selectableUrls.length === 0 && sentFileNames.size > 0 ? (
+                                // All photos already sent
+                                <div className="rounded-lg border border-dashed border-green-300 bg-green-50 p-6 flex flex-col items-center justify-center gap-2">
+                                    <CheckCheck size={24} className="text-green-500" />
+                                    <p className="text-sm text-green-600 font-medium">Semua foto sudah terkirim</p>
+                                    <p className="text-xs text-green-500 italic">Tidak ada foto baru untuk dikirim</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
@@ -263,39 +327,71 @@ export default function XraySubmitModal({
                                                 </p>
                                                 <div className="grid grid-cols-2 gap-3">
                                                     {photos.map(photo => {
-                                                        const checked = selectedUrls.has(photo.url)
+                                                        const checked    = selectedUrls.has(photo.url)
+                                                        const alreadySent = sentFileNames.has(fileNameFromUrl(photo.url))
+
                                                         return (
                                                             <label
                                                                 key={photo.url}
-                                                                className={`cursor-pointer rounded-lg border overflow-hidden transition-all ${
-                                                                    checked
-                                                                        ? 'border-blue-900 ring-1 ring-blue-900'
-                                                                        : 'border-gray-300 hover:border-gray-400'
+                                                                className={`rounded-lg border overflow-hidden transition-all ${
+                                                                    alreadySent
+                                                                        ? 'border-green-400 opacity-60 cursor-not-allowed'
+                                                                        : checked
+                                                                            ? 'border-blue-900 ring-1 ring-blue-900 cursor-pointer'
+                                                                            : 'border-gray-300 hover:border-gray-400 cursor-pointer'
                                                                 }`}
                                                             >
                                                                 <div className="relative">
                                                                     <img
                                                                         src={photo.url}
                                                                         alt={photo.side}
-                                                                        className="w-full h-24 object-cover"
+                                                                        className={`w-full h-24 object-cover ${alreadySent ? 'grayscale' : ''}`}
                                                                     />
-                                                                    <div className={`absolute inset-0 transition-colors ${checked ? 'bg-blue-900/10' : 'bg-transparent'}`} />
+                                                                    {/* Overlay */}
+                                                                    <div className={`absolute inset-0 transition-colors ${
+                                                                        alreadySent
+                                                                            ? 'bg-green-900/20'
+                                                                            : checked
+                                                                                ? 'bg-blue-900/10'
+                                                                                : 'bg-transparent'
+                                                                    }`} />
+
+                                                                    {/* Top-left: checkbox or sent icon */}
                                                                     <div className="absolute top-1.5 left-1.5">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={checked}
-                                                                            onChange={() => toggleUrl(photo.url)}
-                                                                            className="w-4 h-4 rounded border-2 border-blue-900 accent-blue-900 cursor-pointer"
-                                                                        />
+                                                                        {alreadySent ? (
+                                                                            <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                                                                                <CheckCheck size={10} className="text-white" />
+                                                                            </div>
+                                                                        ) : (
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={checked}
+                                                                                onChange={() => toggleUrl(photo.url)}
+                                                                                className="w-4 h-4 rounded border-2 border-blue-900 accent-blue-900 cursor-pointer"
+                                                                            />
+                                                                        )}
                                                                     </div>
-                                                                    {checked && (
+
+                                                                    {/* Top-right: selected checkmark */}
+                                                                    {checked && !alreadySent && (
                                                                         <div className="absolute top-1.5 right-1.5">
                                                                             <CheckCircle2 size={16} className="text-blue-900" />
                                                                         </div>
                                                                     )}
                                                                 </div>
-                                                                <div className="px-2 py-1.5 bg-white border-t border-gray-300">
-                                                                    <p className="text-xs font-semibold text-blue-900">Foto {photo.side}</p>
+
+                                                                {/* Footer label */}
+                                                                <div className={`px-2 py-1.5 border-t flex items-center justify-between gap-1 ${
+                                                                    alreadySent ? 'bg-green-50 border-green-300' : 'bg-white border-gray-300'
+                                                                }`}>
+                                                                    <p className={`text-xs font-semibold ${alreadySent ? 'text-green-600' : 'text-blue-900'}`}>
+                                                                        Foto {photo.side}
+                                                                    </p>
+                                                                    {alreadySent && (
+                                                                        <span className="text-[10px] font-medium text-green-600 bg-green-100 border border-green-300 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                                                            Sudah terkirim
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             </label>
                                                         )
@@ -319,24 +415,24 @@ export default function XraySubmitModal({
                     {!response?.success && (
                         <button
                             onClick={handleSubmit}
-                            disabled={submitting || selectedUrls.size === 0 || (isKirim && alreadyExists === true)}
+                            disabled={submitting || selectedUrls.size === 0 || (isKirim && alreadyExists === true) || loadingSentFiles}
                             className="flex-1 p-4 bg-green-600 rounded-lg shadow-[2px_2px_12px_0px_rgba(0,0,0,0.12)] flex justify-center items-center gap-2.5 hover:bg-green-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             {submitting
                                 ? <Loader2 size={18} className="text-slate-100 animate-spin shrink-0" />
                                 : <Send size={18} className="text-slate-100 shrink-0" />}
                             <span className="text-base font-semibold text-slate-100 whitespace-nowrap">
-            {submitting ? 'Mengirim...' : `${submitLabel} (${selectedUrls.size} Foto)`}
-          </span>
+                                {submitting ? 'Mengirim...' : `${submitLabel} (${selectedUrls.size} Foto)`}
+                            </span>
                         </button>
                     )}
                     <button
                         onClick={onClose}
                         className="flex-1 p-4 bg-slate-100 rounded-lg shadow-[2px_2px_12px_0px_rgba(0,0,0,0.12)] border border-red-600 flex justify-center items-center gap-2.5 hover:bg-red-50 transition-colors"
                     >
-        <span className="text-base font-semibold text-red-600">
-          {response?.success ? 'Tutup' : 'Batal'}
-        </span>
+                        <span className="text-base font-semibold text-red-600">
+                            {response?.success ? 'Tutup' : 'Batal'}
+                        </span>
                     </button>
                 </div>
             </div>
