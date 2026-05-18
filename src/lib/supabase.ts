@@ -33,6 +33,7 @@ export type InspeksiBarang = {
   aju: string | null
   mawb: string | null
   hawb: string | null
+  blawb: string | null
   tanggal_awb : string | null
   kode_kantor : string | null
   airline_code: string | null

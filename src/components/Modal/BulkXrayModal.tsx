@@ -88,12 +88,12 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
     const loadItems = async () => {
         setLoading(true)
         const { data: inspeksiRows } = await supabase
-            .from('inspeksi_barang_v2').select('*').in('id', selectedIds)
+            .from('inspeksi_barang_v3').select('*').in('id', selectedIds)
         if (!inspeksiRows) { setLoading(false); return }
 
         const mawbList = inspeksiRows.map(r => r.mawb).filter(Boolean)
         const hawbList = inspeksiRows.map(r => r.hawb).filter(Boolean)
-        const { data: allBarang } = await supabase.from('barang').select('*')
+        const { data: allBarang } = await supabase.from('barang_v2').select('*')
             .or([...mawbList.map(m => `mawb.eq.${m}`), ...hawbList.map(h => `hawb.eq.${h}`)].join(','))
 
         const built: BulkItem[] = inspeksiRows.map(inspeksi => {

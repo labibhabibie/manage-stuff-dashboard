@@ -346,7 +346,7 @@ export default function AktivitasPage() {
                   onChange={e => { setFilterTarget(e.target.value); setPage(1) }}
               >
                 <option value="">Semua Target</option>
-                <option value="inspeksi_barang_v2">Inspeksi_Barang_v2</option>
+                <option value="inspeksi_barang_v3">Inspeksi_Barang_v3</option>
                 <option value="user_activities">User Activities</option>
               </select>
             </div>

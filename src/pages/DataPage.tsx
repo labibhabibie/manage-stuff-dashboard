@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Search, ChevronLeft, ChevronRight,
   Eye, Clock, Package,
-  RefreshCw, Download, SlidersHorizontal, Send
+  RefreshCw, Download, SlidersHorizontal, Send, ChevronDown, ChevronUp
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
@@ -19,22 +19,30 @@ type Filters = {
   dateTo: string
 }
 
+type ItemKind = 'standalone' | 'house'
+
+function getItemKind(item: InspeksiBarang): ItemKind {
+  return item.hawb && item.hawb.trim() !== '' ? 'house' : 'standalone'
+}
+
 export default function DataPage() {
-  const [data, setData]                   = useState<InspeksiBarang[]>([])
-  const [loading, setLoading]             = useState(true)
-  const [page, setPage]                   = useState(1)
+  const [data, setData]                     = useState<InspeksiBarang[]>([])
+  const [loading, setLoading]               = useState(true)
+  const [page, setPage]                     = useState(1)
   const [barangCountMap, setBarangCountMap] = useState<Record<string, number>>({})
-  const [total, setTotal]                 = useState(0)
-  const [showFilters, setShowFilters]     = useState(false)
-  const [filters, setFilters]             = useState<Filters>({ search: '', dateFrom: '', dateTo: '' })
-  const [selected, setSelected]           = useState<string[]>([])
-  const selectAllRef                      = useRef<HTMLInputElement>(null)
-  const [sortField, setSortField]         = useState<string>('created_at')
-  const [sortDir, setSortDir]             = useState<'asc' | 'desc'>('desc')
-  const [bulkModal, setBulkModal]         = useState(false)
-  const { getByIndex }                    = useGudangData()
+  const [total, setTotal]                   = useState(0)
+  const [showFilters, setShowFilters]       = useState(false)
+  const [filters, setFilters]               = useState<Filters>({ search: '', dateFrom: '', dateTo: '' })
+  const [selected, setSelected]             = useState<string[]>([])
+  const selectAllRef                        = useRef<HTMLInputElement>(null)
+  const [sortField, setSortField]           = useState<string>('created_at')
+  const [sortDir, setSortDir]               = useState<'asc' | 'desc'>('desc')
+  const [bulkModal, setBulkModal]           = useState(false)
+  const [collapsed, setCollapsed]           = useState<Set<string>>(new Set())
+  const { getByIndex }                      = useGudangData()
 
   useEffect(() => { fetchData() }, [page, filters, sortField, sortDir])
+
   useEffect(() => {
     if (selectAllRef.current) {
       const allChecked  = data.length > 0 && data.every(d => selected.includes(d.id))
@@ -53,35 +61,81 @@ export default function DataPage() {
     setLoading(true)
     try {
       let query = supabase
-          .from('inspeksi_barang_v2')
+          .from('inspeksi_barang_v3')
           .select('*', { count: 'exact' })
           .order(sortField, { ascending: sortDir === 'asc' })
           .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
       if (filters.search)
         query = query.or(
-            `aju.ilike.%${filters.search}%,mawb.ilike.%${filters.search}%,hawb.ilike.%${filters.search}%`
+            `mawb.ilike.%${filters.search}%,hawb.ilike.%${filters.search}%,blawb.ilike.%${filters.search}%`
         )
       if (filters.dateFrom) query = query.gte('waktu_masuk', filters.dateFrom)
       if (filters.dateTo)   query = query.lte('waktu_masuk', filters.dateTo + 'T23:59:59')
 
       const { data: rows, count, error } = await query
-
-      const ids = (rows || []).map(r => r.mawb).filter(Boolean)
-      const { data: barangCounts } = await supabase
-          .from('barang').select('mawb, id').in('mawb', ids)
-
-      const map: Record<string, number> = {}
-      barangCounts?.forEach(b => { if (b.mawb) map[b.mawb] = (map[b.mawb] || 0) + 1 })
-
       if (error) { console.error('fetchData error:', error.message); setData([]); setTotal(0); return }
+
+      const blawbs = (rows || []).map(r => r.blawb).filter(Boolean)
+      if (blawbs.length > 0) {
+        const { data: barangCounts } = await supabase
+            .from('barang_v2')
+            .select('blawb, id')
+            .in('blawb', blawbs)
+        const map: Record<string, number> = {}
+        barangCounts?.forEach(b => { if (b.blawb) map[b.blawb] = (map[b.blawb] || 0) + 1 })
+        setBarangCountMap(map)
+      } else {
+        setBarangCountMap({})
+      }
 
       setData(rows || [])
       setTotal(count || 0)
-      setBarangCountMap(map)
     } finally {
       setLoading(false)
     }
+  }
+
+  // Build render list. Groups are keyed by mawb; standalone items render as plain rows.
+  // Each group entry carries the resolved ori_dest so house rows can inherit it.
+  const buildRenderList = (): Array<
+      | { kind: 'standalone'; item: InspeksiBarang; dataIdx: number }
+      | { kind: 'group'; mawb: string; items: InspeksiBarang[]; resolvedOriDest: string; resolvedAirlineCode: string }
+  > => {
+    const result: Array<
+        | { kind: 'standalone'; item: InspeksiBarang; dataIdx: number }
+        | { kind: 'group'; mawb: string; items: InspeksiBarang[]; resolvedOriDest: string; resolvedAirlineCode: string }
+    > = []
+    const seenGroups = new Set<string>()
+
+    data.forEach((item, idx) => {
+      if (getItemKind(item) === 'standalone') {
+        result.push({ kind: 'standalone', item, dataIdx: (page - 1) * PAGE_SIZE + idx })
+      } else {
+        const mawb = item.mawb || item.id
+        if (!seenGroups.has(mawb)) {
+          seenGroups.add(mawb)
+          const groupItems = data.filter(d => getItemKind(d) === 'house' && (d.mawb || d.id) === mawb)
+          // Resolve ori_dest and airline_code: pick first non-empty value across all group items
+          const resolvedOriDest     = groupItems.find(d => d.ori_dest)?.ori_dest     || ''
+          const resolvedAirlineCode = groupItems.find(d => d.airline_code)?.airline_code || ''
+          result.push({ kind: 'group', mawb, items: groupItems, resolvedOriDest, resolvedAirlineCode })
+        }
+      }
+    })
+
+    return result
+  }
+
+  const renderList = buildRenderList()
+
+  const toggleCollapse = (mawb: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(mawb)) next.delete(mawb)
+      else next.add(mawb)
+      return next
+    })
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -96,19 +150,26 @@ export default function DataPage() {
   const activeFilterCount = [filters.dateFrom, filters.dateTo].filter(Boolean).length
 
   const exportCSV = () => {
-    const headers = ['No AJU','MAWB','HAWB','Tanggal AWB','Airline Code','Ori/Dest','Jumlah Pieces','Berat (Kg)','Shipper PIC Name','Shipper PIC Number','Note Handling','Waktu Masuk']
-    const rows = data.map((d, idx) => {
-      const g = getByIndex((page - 1) * PAGE_SIZE + idx)
-      return [d.aju||'',d.mawb||'',d.hawb||'',d.tanggal_awb||g.tanggal_awb,d.airline_code||g.airline_code,d.ori_dest||g.ori_dest,d.jumlah_pieces??'',d.weight||g.weight,d.shipper_pic_name||g.shipper_pic_name,d.shipper_pic_number||g.shipper_pic_number,d.note_handling||'',format(new Date(d.waktu_masuk),'dd/MM/yyyy HH:mm')]
+    const headers = ['Tipe','MAWB','HAWB','BLAWB','Jumlah Pieces','Waktu Masuk']
+    const rows = data.map(d => {
+      const kind = getItemKind(d)
+      const pieces = d.blawb && barangCountMap[d.blawb] != null ? barangCountMap[d.blawb] : ''
+      return [
+        kind === 'standalone' ? 'Master' : 'House',
+        d.mawb || '',
+        d.hawb || '',
+        d.blawb || '',
+        pieces,
+        format(new Date(d.waktu_masuk), 'dd/MM/yyyy HH:mm')
+      ]
     })
     const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
-    a.href = url; a.download = `inspeksi_${format(new Date(),'yyyyMMdd')}.csv`; a.click()
+    a.href = url; a.download = `inspeksi_${format(new Date(), 'yyyyMMdd')}.csv`; a.click()
   }
 
-  // Sort indicator arrows
   const SortArrows = ({ field }: { field: string }) => {
     const active = sortField === field
     return (
@@ -119,26 +180,278 @@ export default function DataPage() {
     )
   }
 
-  const ColHeader = ({ label, field, width }: { label: string; field: string; width: string }) => (
-      <div
-          className={`${width} h-6 p-0.5 flex items-center gap-1 cursor-pointer select-none hover:text-blue-900 transition-colors`}
-          onClick={() => handleSort(field)}
-      >
-        <span className="text-base font-semibold text-gray-800">{label}</span>
-        <SortArrows field={field} />
-      </div>
-  )
+  // ── House row — inherits oriDest/airlineCode from group ────────────────────
+  const renderHouseRow = (
+      item: InspeksiBarang,
+      groupOriDest: string,
+      groupAirlineCode: string
+  ) => {
+    const isChecked = selected.includes(item.id)
+    const pieces    = item.blawb ? barangCountMap[item.blawb] : undefined
+    // House row: use item's own ori_dest first, fall back to group-resolved value
+    const oriDest     = item.ori_dest     || groupOriDest
+    const airlineCode = item.airline_code || groupAirlineCode
+
+    return (
+        <div
+            key={item.id}
+            className={`min-h-[52px] pl-12 pr-4 border-l border-r border-b border-gray-300 flex items-center gap-2 transition-colors ${
+                isChecked ? 'bg-orange-50' : 'bg-slate-50 hover:bg-orange-50/40'
+            }`}
+        >
+          {/* Checkbox */}
+          <div className="shrink-0 flex items-center justify-center w-6">
+            <input
+                type="checkbox"
+                className="w-4 h-4 rounded-sm border-2 border-blue-900 accent-blue-900 cursor-pointer"
+                checked={isChecked}
+                onChange={e =>
+                    setSelected(prev =>
+                        e.target.checked ? [...prev, item.id] : prev.filter(i => i !== item.id)
+                    )
+                }
+            />
+          </div>
+
+          {/* House badge */}
+          <div className="w-[72px] shrink-0 flex items-center">
+          <span className="shrink-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-orange-100 text-orange-700 border border-orange-300">
+            House
+          </span>
+          </div>
+
+          {/* MAWB — muted */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+            <span className="text-sm text-gray-400 truncate">{item.mawb}</span>
+          </div>
+
+          {/* HAWB — highlighted */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+            <span className="text-sm font-bold text-orange-600 truncate">{item.hawb}</span>
+          </div>
+
+          {/* ORI-DEST — resolved from group */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+          <span className="text-sm font-semibold text-gray-600 truncate">
+            {airlineCode && oriDest
+                ? `${oriDest}`
+                : oriDest || airlineCode || 'CGK-SIN'}
+          </span>
+          </div>
+
+          {/* PIECES */}
+          <div className="flex-1 min-w-[60px] min-w-0 flex items-center gap-1">
+            {pieces != null ? (
+                <>
+                  <span className="text-sm font-semibold text-gray-600">{pieces}</span>
+                  <span className="text-sm font-normal text-gray-500 shrink-0">Pcs</span>
+                </>
+            ) : null}
+          </div>
+
+          {/* WAKTU MASUK */}
+          <div className="flex-[2] min-w-[130px] min-w-0 flex items-center gap-1">
+            <Clock size={12} className="text-gray-400 shrink-0" />
+            <span className="text-sm font-semibold text-gray-600 shrink-0">
+            {format(new Date(item.waktu_masuk), 'dd/MM/yyyy', { locale: id })}
+          </span>
+            <span className="text-sm text-gray-500 shrink-0">
+            {format(new Date(item.waktu_masuk), 'HH:mm')}
+          </span>
+          </div>
+
+          {/* AKSI */}
+          <div className="flex-[1.5] min-w-[70px] min-w-0 flex items-center">
+            <Link
+                to={`/data/${item.id}`}
+                className="h-6 px-1.5 py-0.5 bg-slate-100 rounded-md shadow-[2px_2px_10px_0px_rgba(0,0,0,0.20)] border border-gray-300 inline-flex items-center gap-0.5 hover:bg-orange-50 transition-colors shrink-0"
+            >
+              <Eye size={14} className="text-blue-600 shrink-0" />
+              <span className="text-xs font-medium text-blue-600">Detail</span>
+            </Link>
+          </div>
+        </div>
+    )
+  }
+
+  // ── Standalone (Master) row ────────────────────────────────────────────────
+  const renderStandaloneRow = (item: InspeksiBarang, dataIdx: number) => {
+    const isChecked = selected.includes(item.id)
+    const gudang    = getByIndex(dataIdx)
+    const pieces    = item.blawb ? barangCountMap[item.blawb] : undefined
+    const airlineCode = item.airline_code || gudang.airline_code || ''
+    const oriDest     = item.ori_dest     || gudang.ori_dest     || ''
+
+    return (
+        <div
+            key={item.id}
+            className={`min-h-[56px] px-4 border-l border-r border-b border-gray-300 flex items-center gap-2 transition-colors ${
+                isChecked ? 'bg-blue-50' : 'bg-slate-100 hover:bg-gray-50'
+            }`}
+        >
+          {/* Checkbox */}
+          <div className="shrink-0 flex items-center justify-center w-6">
+            <input
+                type="checkbox"
+                className="w-4 h-4 rounded-sm border-2 border-blue-900 accent-blue-900 cursor-pointer"
+                checked={isChecked}
+                onChange={e =>
+                    setSelected(prev =>
+                        e.target.checked ? [...prev, item.id] : prev.filter(i => i !== item.id)
+                    )
+                }
+            />
+          </div>
+
+          {/* Master badge */}
+          <div className="w-[72px] shrink-0 flex items-center">
+          <span className="shrink-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-blue-100 text-blue-800 border border-blue-300">
+            Master
+          </span>
+          </div>
+
+          {/* MAWB — highlighted orange */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+            <span className="text-sm font-bold text-orange-600 truncate">{item.mawb}</span>
+          </div>
+
+          {/* HAWB — blank for standalone */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+            <span className="text-sm font-semibold text-gray-600 truncate">-</span>
+          </div>
+
+          {/* ORI-DEST */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+          <span className="text-sm font-semibold text-gray-600 truncate">
+            {airlineCode && oriDest
+                ? `${oriDest}`
+                : oriDest || airlineCode || 'CGK-SIN'}
+          </span>
+          </div>
+
+          {/* PIECES */}
+          <div className="flex-1 min-w-[60px] min-w-0 flex items-center gap-1">
+            {pieces != null ? (
+                <>
+                  <span className="text-sm font-semibold text-gray-600">{pieces}</span>
+                  <span className="text-sm font-normal text-gray-500 shrink-0">Pcs</span>
+                </>
+            ) : null}
+          </div>
+
+          {/* WAKTU MASUK */}
+          <div className="flex-[2] min-w-[130px] min-w-0 flex items-center gap-1">
+            <Clock size={12} className="text-gray-400 shrink-0" />
+            <span className="text-sm font-semibold text-gray-600 shrink-0">
+            {format(new Date(item.waktu_masuk), 'dd/MM/yyyy', { locale: id })}
+          </span>
+            <span className="text-sm text-gray-500 shrink-0">
+            {format(new Date(item.waktu_masuk), 'HH:mm')}
+          </span>
+          </div>
+
+          {/* AKSI */}
+          <div className="flex-[1.5] min-w-[70px] min-w-0 flex items-center">
+            <Link
+                to={`/data/${item.id}`}
+                className="h-6 px-1.5 py-0.5 bg-slate-100 rounded-md shadow-[2px_2px_10px_0px_rgba(0,0,0,0.20)] border border-gray-300 inline-flex items-center gap-0.5 hover:bg-blue-50 transition-colors shrink-0"
+            >
+              <Eye size={14} className="text-blue-600 shrink-0" />
+              <span className="text-xs font-medium text-blue-600">Detail</span>
+            </Link>
+          </div>
+        </div>
+    )
+  }
+
+  // ── Group accordion header — no TIPE badge, no dashes, no waktu masuk ──────
+  const renderGroupHeader = (
+      mawb: string,
+      items: InspeksiBarang[],
+      resolvedOriDest: string,
+      resolvedAirlineCode: string
+  ) => {
+    const isCollapsed = collapsed.has(mawb)
+    const totalPieces = items.reduce((sum, item) => {
+      return sum + (item.blawb ? (barangCountMap[item.blawb] ?? 0) : 0)
+    }, 0)
+
+    return (
+        <div className="min-h-[52px] px-4 border-l border-r border-b border-gray-300 bg-blue-50 flex items-center gap-2">
+          {/* Checkbox — select all in group */}
+          <div className="shrink-0 flex items-center justify-center w-6">
+            <input
+                type="checkbox"
+                className="w-4 h-4 rounded-sm border-2 border-blue-900 accent-blue-900 cursor-pointer"
+                checked={items.every(d => selected.includes(d.id))}
+                onChange={e => {
+                  const ids = items.map(d => d.id)
+                  setSelected(prev =>
+                      e.target.checked
+                          ? [...new Set([...prev, ...ids])]
+                          : prev.filter(i => !ids.includes(i))
+                  )
+                }}
+            />
+          </div>
+
+          {/* Empty TIPE column — no badge on group header */}
+          <div className="w-[72px] shrink-0" />
+
+          {/* MAWB — bold orange */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center gap-2">
+            <span className="text-sm font-bold text-orange-600 truncate">{mawb}</span>
+          </div>
+
+          {/* HAWB count pill + toggle — in the HAWB column */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+            <button
+                onClick={() => toggleCollapse(mawb)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 border border-orange-300 text-orange-700 text-[11px] font-bold hover:bg-orange-200 transition-colors"
+            >
+              {items.length} House
+              {isCollapsed ? <ChevronDown size={11} /> : <ChevronUp size={11} />}
+            </button>
+          </div>
+
+          {/* ORI-DEST — resolved from group */}
+          <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
+          <span className="text-sm font-semibold text-gray-500 truncate">
+            {resolvedAirlineCode && resolvedOriDest
+                ? `${resolvedAirlineCode} / ${resolvedOriDest}`
+                : resolvedOriDest || resolvedAirlineCode || ''}
+          </span>
+          </div>
+
+          {/* PIECES — summed */}
+          <div className="flex-1 min-w-[60px] min-w-0 flex items-center gap-1">
+            {totalPieces > 0 ? (
+                <>
+                  <span className="text-sm font-semibold text-gray-600">{totalPieces}</span>
+                  <span className="text-sm font-normal text-gray-500 shrink-0">Pcs</span>
+                </>
+            ) : null}
+          </div>
+
+          {/* WAKTU MASUK — blank (houses may have different dates) */}
+          <div className="flex-[2] min-w-[130px] min-w-0" />
+
+          {/* AKSI — no link */}
+          <div className="flex-[1.5] min-w-[70px] min-w-0" />
+        </div>
+    )
+  }
 
   return (
       <div className="space-y-4">
 
         {/* ── Header ── */}
-        <div className="flex flex-wrap justify-between items-end gap-3 pb-4 sticky top-0 bg-[#F2F2F2]">
+        <div className="flex flex-wrap justify-between items-end gap-3 pb-4 sticky top-0 bg-[#F2F2F2] z-10">
           <div className="flex flex-col gap-1.5 min-w-0">
             <span className="text-xl font-bold text-gray-600 drop-shadow-sm">Data Inspeksi</span>
             <span className="text-base font-normal text-gray-600 drop-shadow-sm">
-        Total <span className="font-semibold">{total.toLocaleString('id-ID')}</span> data yang sudah diinspeksi
-      </span>
+            Total <span className="font-semibold">{total.toLocaleString('id-ID')}</span> data yang sudah diinspeksi
+          </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -158,8 +471,8 @@ export default function DataPage() {
                 >
                   <Send size={18} className="text-slate-100 shrink-0" />
                   <span className="text-base font-semibold text-slate-100 whitespace-nowrap">
-            Kirim {selected.length} ke Bea Cukai
-          </span>
+                Kirim {selected.length} ke Bea Cukai
+              </span>
                 </button>
             ) : (
                 <button
@@ -189,7 +502,7 @@ export default function DataPage() {
               <input
                   type="text"
                   className="flex-1 min-w-0 bg-transparent text-base placeholder-gray-400 text-gray-700 outline-none"
-                  placeholder="Cari No. AJU, MAWB. atau HAWB"
+                  placeholder="Cari MAWB atau HAWB"
                   value={filters.search}
                   onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(1) }}
               />
@@ -211,8 +524,8 @@ export default function DataPage() {
               <span className="text-base font-semibold text-blue-900">Filter</span>
               {activeFilterCount > 0 && (
                   <span className="ml-0.5 bg-blue-900 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center shrink-0">
-            {activeFilterCount}
-          </span>
+                {activeFilterCount}
+              </span>
               )}
             </button>
           </div>
@@ -258,9 +571,8 @@ export default function DataPage() {
         {/* ── Table ── */}
         <div className="flex flex-col shadow-[0px_2px_2px_0px_rgba(0,0,0,0.12)]">
 
-          {/* Column header bar */}
+          {/* Column headers */}
           <div className="h-16 px-4 bg-slate-100 rounded-tl-lg rounded-tr-lg border border-gray-300 flex items-center gap-2">
-            {/* Select-all checkbox */}
             <div className="shrink-0 flex items-center justify-center w-6">
               <input
                   ref={selectAllRef}
@@ -273,25 +585,31 @@ export default function DataPage() {
                   checked={data.length > 0 && data.every(d => selected.includes(d.id))}
               />
             </div>
-            {/* Column labels — must match row flex values exactly */}
+
+            <div className="w-[72px] shrink-0 h-6 flex items-center">
+              <span className="text-base font-semibold text-gray-800">TIPE</span>
+            </div>
+
             {[
-              { label: 'NO. AJU',        field: 'aju',           flex: 'flex-[2] min-w-[100px]', sort: true  },
-              { label: 'WAKTU MASUK',    field: 'waktu_masuk',   flex: 'flex-[2] min-w-[120px]', sort: true  },
-              { label: 'NO. MAWB',       field: 'mawb',          flex: 'flex-[2] min-w-[80px]',  sort: true  },
-              { label: 'NO. HAWB',       field: 'hawb',          flex: 'flex-[2] min-w-[80px]',  sort: true  },
-              { label: 'AIRLINE - RUTE', field: 'airline_code',  flex: 'flex-[2] min-w-[100px]', sort: true  },
-              { label: 'PIECES',         field: 'jumlah_pieces', flex: 'flex-1 min-w-[60px]',    sort: true  },
-              { label: 'AKSI',           field: null,            flex: 'flex-[1.5] min-w-[70px]',sort: false },
+              { label: 'NO. MAWB',    field: 'mawb',          flex: 'flex-[2] min-w-[100px]' },
+              { label: 'NO. HAWB',    field: 'hawb',          flex: 'flex-[2] min-w-[100px]' },
+              { label: 'ORI - DEST',  field: 'ori_dest',      flex: 'flex-[2] min-w-[100px]' },
+              { label: 'PIECES',      field: 'jumlah_pieces', flex: 'flex-1 min-w-[60px]'    },
+              { label: 'WAKTU MASUK', field: 'waktu_masuk',   flex: 'flex-[2] min-w-[130px]' },
             ].map(col => (
                 <div
-                    key={col.label}
-                    className={`${col.flex} h-6 p-0.5 flex items-center gap-1 ${col.sort ? 'cursor-pointer' : ''}`}
-                    onClick={() => col.sort && col.field && handleSort(col.field)}
+                    key={col.field}
+                    className={`${col.flex} h-6 p-0.5 flex items-center gap-1 cursor-pointer select-none hover:text-blue-900 transition-colors`}
+                    onClick={() => handleSort(col.field)}
                 >
-                  <span className="text-base font-semibold text-gray-800 truncate">{col.label}</span>
-                  {col.sort && col.field && <SortArrows field={col.field} />}
+                  <span className="text-base font-semibold text-gray-800">{col.label}</span>
+                  <SortArrows field={col.field} />
                 </div>
             ))}
+
+            <div className="flex-[1.5] min-w-[70px] h-6 flex items-center">
+              <span className="text-base font-semibold text-gray-800">AKSI</span>
+            </div>
           </div>
 
           {/* Loading / Empty */}
@@ -304,97 +622,30 @@ export default function DataPage() {
                 <Package size={32} className="text-gray-300 mx-auto mb-3" />
                 <p className="text-sm text-gray-400">Tidak ada data ditemukan</p>
               </div>
-          ) : data.map((item, idx) => {
-            const globalIdx = (page - 1) * PAGE_SIZE + idx
-            const gudang    = getByIndex(globalIdx)
-            const isChecked = selected.includes(item.id)
+          ) : renderList.map((entry, i) => {
+            if (entry.kind === 'standalone') {
+              return renderStandaloneRow(entry.item, entry.dataIdx)
+            }
+            const isCollapsed = collapsed.has(entry.mawb)
             return (
-                <div
-                    key={item.id}
-                    className={`h-14 px-4 border-l border-r border-b border-gray-300 flex items-center gap-2 transition-colors ${isChecked ? 'bg-blue-50' : 'bg-slate-100 hover:bg-gray-50'}`}
-                >
-                  {/* Checkbox */}
-                  <div className="shrink-0 flex items-center justify-center w-6">
-                    <input
-                        type="checkbox"
-                        className="w-4 h-4 rounded-sm border-2 border-blue-900 accent-blue-900 cursor-pointer"
-                        checked={isChecked}
-                        onChange={e =>
-                            setSelected(prev =>
-                                e.target.checked ? [...prev, item.id] : prev.filter(i => i !== item.id)
-                            )
-                        }
-                    />
-                  </div>
-
-                  {/* NO. AJU */}
-                  <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-blue-900 truncate">{item.aju || '—'}</span>
-                  </div>
-
-                  {/* WAKTU MASUK */}
-                  <div className="flex-[2] min-w-[120px] min-w-0 flex items-center gap-1">
-                    <Clock size={12} className="text-gray-400 shrink-0" />
-                    <span className="text-sm font-semibold text-gray-600 shrink-0">
-              {format(new Date(item.waktu_masuk), 'dd/MM/yyyy', { locale: id })}
-            </span>
-                    <span className="text-sm font-normal text-gray-600 shrink-0">
-              {format(new Date(item.waktu_masuk), 'HH:mm')}
-            </span>
-                  </div>
-
-                  {/* NO. MAWB */}
-                  <div className="flex-[2] min-w-[80px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-gray-600 truncate">{item.mawb || '—'}</span>
-                  </div>
-
-                  {/* NO. HAWB */}
-                  <div className="flex-[2] min-w-[80px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-gray-600 truncate">{item.hawb || '—'}</span>
-                  </div>
-
-                  {/* AIRLINE - RUTE */}
-                  <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
-            <span className="text-sm font-semibold text-gray-600 truncate">
-              {item.airline_code
-                  ? `${item.airline_code} / ${item.ori_dest || gudang?.ori_dest || '—'}`
-                  : gudang?.airline_code
-                      ? `${gudang.airline_code} / ${gudang.ori_dest || '—'}`
-                      : '—'}
-            </span>
-                  </div>
-
-                  {/* PIECES */}
-                  <div className="flex-1 min-w-[60px] min-w-0 flex items-center gap-1">
-                    {item.mawb && barangCountMap[item.mawb] != null ? (
-                        <>
-                          <span className="text-sm font-semibold text-gray-600">{barangCountMap[item.mawb]}</span>
-                          <span className="text-sm font-normal text-gray-600 shrink-0">Pcs</span>
-                        </>
-                    ) : (
-                        <span className="text-sm text-gray-400 italic">—</span>
-                    )}
-                  </div>
-
-                  {/* AKSI */}
-                  <div className="flex-[1.5] min-w-[70px] min-w-0 flex items-center">
-                    <Link
-                        to={`/data/${item.id}`}
-                        className="h-6 px-1.5 py-0.5 bg-slate-100 rounded-md shadow-[2px_2px_10px_0px_rgba(0,0,0,0.20)] border border-gray-300 inline-flex items-center gap-0.5 hover:bg-blue-50 transition-colors shrink-0"
-                    >
-                      <Eye size={14} className="text-blue-600 shrink-0" />
-                      <span className="text-xs font-medium text-blue-600">Detail</span>
-                    </Link>
-                  </div>
+                <div key={`group-${entry.mawb}-${i}`} className="relative">
+                  {renderGroupHeader(entry.mawb, entry.items, entry.resolvedOriDest, entry.resolvedAirlineCode)}
+                  {!isCollapsed && (
+                      <div className="border-l-2 border-orange-200">
+                        {entry.items.map(item =>
+                            renderHouseRow(item, entry.resolvedOriDest, entry.resolvedAirlineCode)
+                        )}
+                      </div>
+                  )}
                 </div>
             )
           })}
 
           {/* Pagination Footer */}
           <div className="h-16 px-4 bg-slate-100 rounded-bl-lg rounded-br-lg border border-t-0 border-gray-300 flex justify-between items-center gap-2">
-      <span className="text-base font-medium text-gray-600 truncate min-w-0">
-        Menampilkan {Math.min((page - 1) * PAGE_SIZE + 1, total)} – {Math.min(page * PAGE_SIZE, total)} dari {total.toLocaleString('id-ID')} data
-      </span>
+          <span className="text-base font-medium text-gray-600 truncate min-w-0">
+            Menampilkan {Math.min((page - 1) * PAGE_SIZE + 1, total)} – {Math.min(page * PAGE_SIZE, total)} dari {total.toLocaleString('id-ID')} data
+          </span>
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}

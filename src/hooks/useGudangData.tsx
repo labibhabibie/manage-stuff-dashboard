@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 
 export type GudangData = {
     id: string
+    aju: string
     tanggal_awb: string | null
     airline_code: string | null
     ori_dest: string | null
@@ -16,6 +17,7 @@ export type GudangData = {
 
 const EMPTY_GUDANG: GudangData = {
     id: '',
+    aju: 'FHAN26044069',
     tanggal_awb: '2026-4-24',
     airline_code: 'GA',
     ori_dest: 'LAX-CGK',
@@ -36,7 +38,7 @@ async function fetchGudangRows(): Promise<GudangData[]> {
     cachePromise = (async () => {
         const { data, error } = await supabase
             .from('data_from_gudang')
-            .select('id, tanggal_awb, airline_code, ori_dest, weight, shipper_pic_name, shipper_pic_number')
+            .select('id, aju, tanggal_awb, airline_code, ori_dest, weight, shipper_pic_name, shipper_pic_number')
             .order('tanggal_awb', { ascending: true });
 
         if (error || !data) {
@@ -102,7 +104,7 @@ export function useGudangForItem(inspeksiId: string | undefined) {
 
         // Get stable index: position of this item in created_at order
         supabase
-            .from('inspeksi_barang_v2')
+            .from('inspeksi_barang_v3')
             .select('id')
             .order('created_at', { ascending: true })
             .then(({ data }) => {

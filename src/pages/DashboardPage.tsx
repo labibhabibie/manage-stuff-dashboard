@@ -41,7 +41,7 @@ export default function DashboardPage() {
     setLoading(true)
     try {
       const { data, error } = await supabase
-          .from('inspeksi_barang_v2')
+          .from('inspeksi_barang_v3')
           .select('*')
           .order('created_at', { ascending: false })
 
