@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
     ArrowLeft, Clock, Image, Edit2, Save, X, AlertTriangle,
     Loader2, CheckCircle2, Plane, Package2, Phone,
     User, Send, Upload, Building2, ChevronLeft, ChevronRight, ChevronDown,
-    GitBranch, Layers, ArrowUpRight,
+    GitBranch, Layers, Search, ZoomIn,
 } from "lucide-react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
@@ -78,6 +78,41 @@ const MockFieldView = ({ label, value, mock }: { label: string; value?: string |
     </div>
 )
 
+// ─── Lightbox ─────────────────────────────────────────────────────────────────
+
+function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [onClose])
+
+    return (
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+            onClick={onClose}
+        >
+            <div
+                className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center"
+                onClick={e => e.stopPropagation()}
+            >
+                <button
+                    onClick={onClose}
+                    className="absolute -top-3 -right-3 z-10 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-100 transition-colors"
+                >
+                    <X size={16} className="text-gray-700" />
+                </button>
+                <img
+                    src={src}
+                    alt={alt}
+                    className="max-w-full max-h-[85vh] rounded-xl object-contain shadow-2xl"
+                />
+                <p className="mt-3 text-sm text-white/70">{alt}</p>
+            </div>
+        </div>
+    )
+}
+
 // ─── Page Dropdown ────────────────────────────────────────────────────────────
 
 function PageDropdown({ currentPage, totalPages, onSelect }: {
@@ -90,11 +125,11 @@ function PageDropdown({ currentPage, totalPages, onSelect }: {
                 onClick={() => setOpen(v => !v)}
                 className={`h-9 px-3 bg-slate-100 rounded-lg shadow-sm border flex items-center gap-1.5 transition-colors ${open ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:bg-gray-50'}`}
             >
-                <span className="text-sm font-medium text-gray-600">Halaman {currentPage} / {totalPages}</span>
+                <span className="text-sm font-medium text-gray-600">Hal. {currentPage} / {totalPages}</span>
                 <ChevronDown size={14} className={`text-gray-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
             </button>
             {open && (
-                <div className="absolute bottom-full left-0 mb-1.5 z-50 min-w-[140px] bg-white rounded-lg border border-gray-200 shadow-[0_4px_20px_rgba(0,0,0,0.12)] overflow-hidden">
+                <div className="absolute bottom-full left-0 mb-1.5 z-50 min-w-[130px] bg-white rounded-lg border border-gray-200 shadow-[0_4px_20px_rgba(0,0,0,0.12)] overflow-hidden">
                     {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
                         <button
                             key={p}
@@ -115,41 +150,41 @@ function PageDropdown({ currentPage, totalPages, onSelect }: {
 
 function BeacukaiStatusBadge({ status }: { status: 'loading' | 'sent' | 'unsent' }) {
     if (status === 'loading') return (
-        <div className="px-2 py-0.5 bg-gray-100 rounded-full inline-flex items-center gap-1 shrink-0">
+        <div className="px-2 py-0.5 bg-gray-100 rounded-full border border-gray-300 inline-flex items-center gap-1 shrink-0">
             <Loader2 size={10} className="text-gray-400 animate-spin shrink-0" />
             <span className="text-xs font-semibold text-gray-400 whitespace-nowrap">Mengecek...</span>
         </div>
     )
     if (status === 'sent') return (
-        <div className="px-2 py-0.5 bg-blue-100 rounded-full inline-flex items-center gap-1 shrink-0">
+        <div className="px-2 py-0.5 bg-blue-100 rounded-full border border-blue-400 inline-flex items-center gap-1 shrink-0">
             <div className="w-3 h-3 bg-blue-600 rounded-full shrink-0" />
             <span className="text-xs font-semibold text-blue-700 whitespace-nowrap">Sudah kirim Beacukai</span>
         </div>
     )
     return (
-        <div className="px-2 py-0.5 bg-amber-100 rounded-full inline-flex items-center gap-1 shrink-0">
+        <div className="px-2 py-0.5 bg-amber-100 rounded-full border border-amber-400 inline-flex items-center gap-1 shrink-0">
             <div className="w-3 h-3 bg-amber-500 rounded-full shrink-0" />
             <span className="text-xs font-semibold text-amber-600 whitespace-nowrap">Belum kirim Beacukai</span>
         </div>
     )
 }
 
-// ─── Barang Section (per-HAWB / per-blawb) ───────────────────────────────────
+// ─── Barang Section (per-blawb) ───────────────────────────────────────────────
 
 function BarangSection({
-                           blawb, itemId, editing, fotoFiles, setFotoFile, clearFotoFile
+                           blawb, editing, fotoFiles, setFotoFile, clearFotoFile
                        }: {
     blawb: string | null | undefined
-    itemId: string
     editing: boolean
     fotoFiles: Record<string, { atas?: File; samping?: File }>
     setFotoFile: (barangId: string, side: 'atas' | 'samping', file: File) => void
     clearFotoFile: (barangId: string, side: 'atas' | 'samping') => void
 }) {
-    const [barangList, setBarangList] = useState<Barang[]>([])
-    const [loading, setLoading]       = useState(true)
-    const [barangPage, setBarangPage] = useState(1)
+    const [barangList, setBarangList]   = useState<Barang[]>([])
+    const [loading, setLoading]         = useState(true)
+    const [barangPage, setBarangPage]   = useState(1)
     const [selectedIdx, setSelectedIdx] = useState(0)
+    const [lightbox, setLightbox]       = useState<{ src: string; alt: string } | null>(null)
 
     useEffect(() => {
         if (!blawb) { setBarangList([]); setLoading(false); return }
@@ -167,9 +202,9 @@ function BarangSection({
             })
     }, [blawb])
 
-    const totalPages   = Math.max(1, Math.ceil(barangList.length / BARANG_PAGE_SIZE))
-    const paged        = barangList.slice((barangPage - 1) * BARANG_PAGE_SIZE, barangPage * BARANG_PAGE_SIZE)
-    const startIdx     = (barangPage - 1) * BARANG_PAGE_SIZE
+    const totalPages     = Math.max(1, Math.ceil(barangList.length / BARANG_PAGE_SIZE))
+    const paged          = barangList.slice((barangPage - 1) * BARANG_PAGE_SIZE, barangPage * BARANG_PAGE_SIZE)
+    const startIdx       = (barangPage - 1) * BARANG_PAGE_SIZE
     const selectedBarang = barangList[selectedIdx]
 
     const handlePageChange = (p: number) => {
@@ -185,173 +220,190 @@ function BarangSection({
     )
 
     return (
-        <div className="flex flex-col lg:flex-row items-start gap-4">
-            {/* Barang list */}
-            <div className="w-full lg:flex-1 flex flex-col gap-0 min-w-0">
-                <div className="flex flex-col border border-gray-300 rounded-lg overflow-hidden">
-                    <div className="h-14 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2.5">
-                        <Package2 size={18} className="text-gray-800 shrink-0" />
-                        <span className="text-base font-semibold text-gray-800">
-                            Barang <span className="font-normal text-gray-500">({barangList.length} items)</span>
-                        </span>
-                    </div>
-                    <div className="h-12 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2">
-                        <div className="flex-1 min-w-0"><span className="text-sm font-semibold text-gray-800">No.</span></div>
-                        <div className="flex-[3] min-w-0"><span className="text-sm font-semibold text-gray-800">ID BARANG</span></div>
-                        <div className="flex-[2] min-w-0"><span className="text-sm font-semibold text-gray-800">STATUS</span></div>
-                    </div>
-
-                    {barangList.length === 0 ? (
-                        <div className="py-8 text-center text-sm text-gray-400 italic bg-slate-100">
-                            Tidak ada data barang untuk HAWB ini
-                        </div>
-                    ) : paged.map((barang, pageIdx) => {
-                        const absIdx = startIdx + pageIdx
-                        return (
-                            <button
-                                key={barang.id}
-                                onClick={() => setSelectedIdx(absIdx)}
-                                className={`h-12 px-4 border-b border-gray-300 flex items-center gap-2 transition-colors w-full text-left ${
-                                    selectedIdx === absIdx ? 'bg-blue-50' : 'bg-slate-100 hover:bg-gray-50'
-                                }`}
-                            >
-                                <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-semibold text-blue-900">{absIdx + 1}.</span>
-                                </div>
-                                <div className="flex-[3] min-w-0">
-                                    <span className="text-sm font-semibold text-gray-600 truncate">
-                                        {barang.id_barang || `Barang ${absIdx + 1}`}
-                                    </span>
-                                </div>
-                                <div className="flex-[2] min-w-0">
-                                    <div className="px-2 py-0.5 bg-green-300 rounded-full inline-flex items-center gap-0.5 shrink-0">
-                                        <div className="w-2.5 h-2.5 bg-green-600 rounded-full shrink-0" />
-                                        <span className="text-xs font-semibold text-green-600 whitespace-nowrap">Selesai</span>
-                                    </div>
-                                </div>
-                            </button>
-                        )
-                    })}
-
-                    {barangList.length > 0 && (
-                        <div className="p-3 bg-slate-100 border-t border-gray-300 flex flex-col gap-2">
-                            <span className="text-sm font-medium text-gray-400">
-                                {startIdx + 1}–{Math.min(barangPage * BARANG_PAGE_SIZE, barangList.length)} dari {barangList.length}
+        <>
+            {lightbox && (
+                <Lightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />
+            )}
+            <div className="flex flex-col lg:flex-row items-start gap-4">
+                {/* Barang list */}
+                <div className="w-full lg:flex-1 flex flex-col gap-0 min-w-0">
+                    <div className="flex flex-col border border-gray-300 rounded-lg overflow-hidden">
+                        <div className="h-14 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2.5">
+                            <Package2 size={18} className="text-gray-800 shrink-0" />
+                            <span className="text-base font-semibold text-gray-800">
+                                Barang <span className="font-normal text-gray-500">({barangList.length} items)</span>
                             </span>
-                            <div className="flex items-center gap-1.5">
-                                <button
-                                    onClick={() => handlePageChange(Math.max(1, barangPage - 1))}
-                                    disabled={barangPage === 1}
-                                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 bg-slate-100 hover:bg-gray-50 disabled:opacity-40"
-                                >
-                                    <ChevronLeft size={14} className="text-gray-600" />
-                                </button>
-                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                                    <button
-                                        key={p}
-                                        onClick={() => handlePageChange(p)}
-                                        className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
-                                            p === barangPage
-                                                ? 'bg-blue-200 border border-blue-600 text-blue-700'
-                                                : 'border border-gray-300 bg-slate-100 text-gray-600 hover:bg-gray-50'
-                                        }`}
-                                    >
-                                        {p}
-                                    </button>
-                                ))}
-                                <button
-                                    onClick={() => handlePageChange(Math.min(totalPages, barangPage + 1))}
-                                    disabled={barangPage === totalPages}
-                                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 bg-slate-100 hover:bg-gray-50 disabled:opacity-40"
-                                >
-                                    <ChevronRight size={14} className="text-gray-600" />
-                                </button>
-                                {totalPages > 1 && (
-                                    <PageDropdown currentPage={barangPage} totalPages={totalPages} onSelect={handlePageChange} />
-                                )}
-                            </div>
                         </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Photo preview */}
-            {barangList.length > 0 && selectedBarang && (
-                <div className="w-full lg:flex-1 min-w-0">
-                    <div className="px-4 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-4">
-                        <div className="pb-3 border-b border-gray-300 flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-2 min-w-0">
-                                <span className="text-base font-semibold text-gray-800">Preview:</span>
-                                <span className="text-base font-normal text-gray-600 truncate min-w-0">
-                                    {selectedBarang.id_barang || `Barang ${selectedIdx + 1}`}
-                                </span>
-                            </div>
-                            <div className="relative group flex items-center gap-1.5 shrink-0 cursor-default">
-                                <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center">
-                                    <span className="text-xs font-bold text-gray-500 leading-none">?</span>
-                                </div>
-                                <div className="absolute bottom-full right-0 mb-2 w-52 bg-gray-800 text-white text-xs font-medium rounded-lg px-3 py-2.5 shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-200 z-10">
-                                    <div className="absolute -bottom-1.5 right-4 w-3 h-3 bg-gray-800 rotate-45 rounded-sm" />
-                                    Klik item barang di sebelah kiri untuk mengganti preview
-                                </div>
-                            </div>
+                        <div className="h-12 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2">
+                            <div className="flex-1 min-w-0"><span className="text-sm font-semibold text-gray-800">No.</span></div>
+                            <div className="flex-[3] min-w-0"><span className="text-sm font-semibold text-gray-800">ID BARANG</span></div>
+                            <div className="flex-[2] min-w-0"><span className="text-sm font-semibold text-gray-800">STATUS</span></div>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row gap-4">
-                            {(['atas', 'samping'] as const).map(side => (
-                                <div key={side} className="flex-1 min-w-0 p-3 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-3">
-                                    <div className="flex items-center gap-2">
-                                        <Image size={16} className="text-blue-900 shrink-0" />
-                                        <span className="text-sm font-semibold text-blue-900">
-                                            {side === 'atas' ? 'Foto Depan' : 'Foto Samping'}
+                        {barangList.length === 0 ? (
+                            <div className="py-8 text-center text-sm text-gray-400 italic bg-slate-100">
+                                Tidak ada data barang untuk AWB ini
+                            </div>
+                        ) : paged.map((barang, pageIdx) => {
+                            const absIdx = startIdx + pageIdx
+                            return (
+                                <button
+                                    key={barang.id}
+                                    onClick={() => setSelectedIdx(absIdx)}
+                                    className={`h-12 px-4 border-b border-gray-300 flex items-center gap-2 transition-colors w-full text-left ${
+                                        selectedIdx === absIdx ? 'bg-blue-50' : 'bg-slate-100 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <div className="flex-1 min-w-0">
+                                        <span className="text-sm font-semibold text-blue-900">{absIdx + 1}.</span>
+                                    </div>
+                                    <div className="flex-[3] min-w-0">
+                                        <span className="text-sm font-semibold text-gray-600 truncate">
+                                            {barang.id_barang || `Barang ${absIdx + 1}`}
                                         </span>
                                     </div>
-                                    {editing ? (
-                                        <div className="space-y-2">
-                                            {selectedBarang[`foto_url_${side}`] ? (
-                                                <div className="rounded-lg overflow-hidden relative group/img">
-                                                    <img src={selectedBarang[`foto_url_${side}`]!} className="w-full object-cover rounded-lg" alt={`foto ${side}`} />
-                                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg">
-                                                        <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-white/20 hover:bg-white/30 text-white transition-colors">
-                                                            <Upload size={12} /> Ganti
+                                    <div className="flex-[2] min-w-0">
+                                        <div className="px-2 py-0.5 bg-green-100 border border-green-400 rounded-full inline-flex items-center gap-0.5 shrink-0">
+                                            <div className="w-2.5 h-2.5 bg-green-600 rounded-full shrink-0" />
+                                            <span className="text-xs font-semibold text-green-700 whitespace-nowrap">Selesai</span>
+                                        </div>
+                                    </div>
+                                </button>
+                            )
+                        })}
+
+                        {barangList.length > 0 && (
+                            <div className="p-3 bg-slate-100 border-t border-gray-300 flex flex-col gap-2">
+                                <span className="text-sm font-medium text-gray-400">
+                                    {startIdx + 1}–{Math.min(barangPage * BARANG_PAGE_SIZE, barangList.length)} dari {barangList.length}
+                                </span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <button
+                                        onClick={() => handlePageChange(Math.max(1, barangPage - 1))}
+                                        disabled={barangPage === 1}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 bg-slate-100 hover:bg-gray-50 disabled:opacity-40"
+                                    >
+                                        <ChevronLeft size={14} className="text-gray-600" />
+                                    </button>
+                                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                                        <button
+                                            key={p}
+                                            onClick={() => handlePageChange(p)}
+                                            className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
+                                                p === barangPage
+                                                    ? 'bg-blue-200 border border-blue-600 text-blue-700'
+                                                    : 'border border-gray-300 bg-slate-100 text-gray-600 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {p}
+                                        </button>
+                                    ))}
+                                    <button
+                                        onClick={() => handlePageChange(Math.min(totalPages, barangPage + 1))}
+                                        disabled={barangPage === totalPages}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 bg-slate-100 hover:bg-gray-50 disabled:opacity-40"
+                                    >
+                                        <ChevronRight size={14} className="text-gray-600" />
+                                    </button>
+                                    {totalPages > 1 && (
+                                        <PageDropdown currentPage={barangPage} totalPages={totalPages} onSelect={handlePageChange} />
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Photo preview */}
+                {barangList.length > 0 && selectedBarang && (
+                    <div className="w-full lg:flex-1 min-w-0">
+                        <div className="px-4 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-4">
+                            <div className="pb-3 border-b border-gray-300 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                    <span className="text-base font-semibold text-gray-800">Preview:</span>
+                                    <span className="text-base font-normal text-gray-600 truncate min-w-0">
+                                        {selectedBarang.id_barang || `Barang ${selectedIdx + 1}`}
+                                    </span>
+                                </div>
+                                <div className="relative group flex items-center gap-1.5 shrink-0 cursor-default">
+                                    <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center">
+                                        <span className="text-xs font-bold text-gray-500 leading-none">?</span>
+                                    </div>
+                                    <div className="absolute bottom-full right-0 mb-2 w-52 bg-gray-800 text-white text-xs font-medium rounded-lg px-3 py-2.5 shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-200 z-10">
+                                        <div className="absolute -bottom-1.5 right-4 w-3 h-3 bg-gray-800 rotate-45 rounded-sm" />
+                                        Klik item barang di kiri untuk ganti preview. Klik gambar untuk perbesar.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-4">
+                                {(['atas', 'samping'] as const).map(side => {
+                                    const url = selectedBarang[`foto_url_${side}`]
+                                    return (
+                                        <div key={side} className="flex-1 min-w-0 p-3 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Image size={16} className="text-blue-900 shrink-0" />
+                                                <span className="text-sm font-semibold text-blue-900">
+                                                    {side === 'atas' ? 'Foto Depan' : 'Foto Samping'}
+                                                </span>
+                                            </div>
+                                            {editing ? (
+                                                <div className="space-y-2">
+                                                    {url ? (
+                                                        <div className="rounded-lg overflow-hidden relative group/img">
+                                                            <img src={url} className="w-full object-cover rounded-lg" alt={`foto ${side}`} />
+                                                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-lg">
+                                                                <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-white/20 hover:bg-white/30 text-white transition-colors">
+                                                                    <Upload size={12} /> Ganti
+                                                                    <input type="file" accept="image/*" className="sr-only"
+                                                                           onChange={(e) => { const f = e.target.files?.[0]; if (f) setFotoFile(selectedBarang.id, side, f) }} />
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <label className="cursor-pointer w-full rounded-lg border border-dashed border-blue-900 h-24 flex flex-col items-center justify-center text-gray-400 hover:border-blue-600 hover:text-gray-600 transition-colors">
+                                                            <Upload size={18} className="mb-1 opacity-60" />
+                                                            <p className="text-xs">Upload</p>
                                                             <input type="file" accept="image/*" className="sr-only"
                                                                    onChange={(e) => { const f = e.target.files?.[0]; if (f) setFotoFile(selectedBarang.id, side, f) }} />
                                                         </label>
+                                                    )}
+                                                    {fotoFiles[selectedBarang.id]?.[side] && (
+                                                        <div className="rounded-lg overflow-hidden relative">
+                                                            <img src={URL.createObjectURL(fotoFiles[selectedBarang.id][side]!)} className="w-full h-24 object-cover" alt="preview" />
+                                                            <button onClick={() => clearFotoFile(selectedBarang.id, side)} className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black/80">
+                                                                <X size={10} />
+                                                            </button>
+                                                            <p className="text-[10px] text-blue-600 mt-1">● File baru dipilih</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : url ? (
+                                                // Clickable image → lightbox
+                                                <button
+                                                    className="relative group/img w-full rounded-lg overflow-hidden border border-gray-200"
+                                                    onClick={() => setLightbox({ src: url, alt: `${selectedBarang.id_barang || 'Barang'} — ${side === 'atas' ? 'Depan' : 'Samping'}` })}
+                                                >
+                                                    <img src={url} className="w-full rounded-lg object-cover" alt={`foto ${side}`} />
+                                                    <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors rounded-lg flex items-center justify-center">
+                                                        <ZoomIn size={24} className="text-white opacity-0 group-hover/img:opacity-100 transition-opacity drop-shadow-lg" />
                                                     </div>
-                                                </div>
+                                                </button>
                                             ) : (
-                                                <label className="cursor-pointer w-full rounded-lg border border-dashed border-blue-900 h-24 flex flex-col items-center justify-center text-gray-400 hover:border-blue-600 hover:text-gray-600 transition-colors">
-                                                    <Upload size={18} className="mb-1 opacity-60" />
-                                                    <p className="text-xs">Upload</p>
-                                                    <input type="file" accept="image/*" className="sr-only"
-                                                           onChange={(e) => { const f = e.target.files?.[0]; if (f) setFotoFile(selectedBarang.id, side, f) }} />
-                                                </label>
-                                            )}
-                                            {fotoFiles[selectedBarang.id]?.[side] && (
-                                                <div className="rounded-lg overflow-hidden relative">
-                                                    <img src={URL.createObjectURL(fotoFiles[selectedBarang.id][side]!)} className="w-full h-24 object-cover" alt="preview" />
-                                                    <button onClick={() => clearFotoFile(selectedBarang.id, side)} className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black/80">
-                                                        <X size={10} />
-                                                    </button>
-                                                    <p className="text-[10px] text-blue-600 mt-1">● File baru dipilih</p>
+                                                <div className="w-full h-full rounded-lg border border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400">
+                                                    <Image size={18} className="mb-1 opacity-40" />
+                                                    <p className="text-xs">Tidak ada foto</p>
                                                 </div>
                                             )}
                                         </div>
-                                    ) : selectedBarang[`foto_url_${side}`] ? (
-                                        <img src={selectedBarang[`foto_url_${side}`]!} className="w-full rounded-lg object-cover" alt={`foto ${side}`} />
-                                    ) : (
-                                        <div className="w-full h-24 rounded-lg border border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400">
-                                            <Image size={18} className="mb-1 opacity-40" />
-                                            <p className="text-xs">Tidak ada foto</p>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                                    )
+                                })}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )}
+            </div>
+        </>
     )
 }
 
@@ -359,19 +411,18 @@ function BarangSection({
 
 export default function DetailPage() {
     const { id: recordId } = useParams<{ id: string }>();
-    const [item, setItem]           = useState<InspeksiBarang | null>(null);
-    // siblings = all house items sharing same mawb (including current)
-    const [siblings, setSiblings]   = useState<InspeksiBarang[]>([])
-    // activeTab = blawb of the currently active house tab (or null for standalone)
+    const [item, setItem]               = useState<InspeksiBarang | null>(null);
+    const [siblings, setSiblings]       = useState<InspeksiBarang[]>([])
+    const [hawbSearch, setHawbSearch]   = useState('')
     const [activeTabId, setActiveTabId] = useState<string>('')
-    const [loading, setLoading]     = useState(true);
-    const [editing, setEditing]     = useState(false);
-    const [saving, setSaving]       = useState(false);
-    const [saved, setSaved]         = useState(false);
-    const { gudang } = useGudangForItem(recordId)
-    const [xrayModal, setXrayModal] = useState<{ open: boolean; mode: 'kirim' | 'add' }>({ open: false, mode: 'kirim' })
+    const [loading, setLoading]         = useState(true);
+    const [editing, setEditing]         = useState(false);
+    const [saving, setSaving]           = useState(false);
+    const [saved, setSaved]             = useState(false);
+    const { gudang }                    = useGudangForItem(recordId)
+    const [xrayModal, setXrayModal]     = useState<{ open: boolean; mode: 'kirim' | 'add' }>({ open: false, mode: 'kirim' })
     const [beacukaiStatus, setBeacukaiStatus] = useState<'loading' | 'sent' | 'unsent'>('loading')
-    const [fotoFiles, setFotoFiles] = useState<Record<string, { atas?: File; samping?: File }>>({});
+    const [fotoFiles, setFotoFiles]     = useState<Record<string, { atas?: File; samping?: File }>>({});
 
     const [editData, setEditData] = useState({
         aju: "", mawb: "", hawb: "", tanggal_awb: "", kode_kantor: "",
@@ -401,22 +452,21 @@ export default function DetailPage() {
             const currentItem = data as InspeksiBarang
             setItem(currentItem);
             setEditData({
-                aju: data.aju || gudang.aju || "",
-                mawb: data.mawb || "",
-                hawb: data.hawb || "",
-                airline_code: data.airline_code || gudang.airline_code || "",
-                ori_dest: data.ori_dest || gudang.ori_dest || "",
-                weight: data.weight || gudang.weight || "",
-                tanggal_awb: data.tanggal_awb || gudang.tanggal_awb || "",
-                kode_kantor: data.kode_kantor || "BANTEN",
-                shipper_pic_name: data.shipper_pic_name || gudang.shipper_pic_name || "",
+                aju:              data.aju              || gudang.aju              || "",
+                mawb:             data.mawb             || "",
+                hawb:             data.hawb             || "",
+                airline_code:     data.airline_code     || gudang.airline_code     || "",
+                ori_dest:         data.ori_dest         || gudang.ori_dest         || "",
+                weight:           data.weight           || gudang.weight           || "",
+                tanggal_awb:      data.tanggal_awb      || gudang.tanggal_awb      || "",
+                kode_kantor:      data.kode_kantor      || "BANTEN",
+                shipper_pic_name:   data.shipper_pic_name   || gudang.shipper_pic_name   || "",
                 shipper_pic_number: data.shipper_pic_number || gudang.shipper_pic_number || "",
-                note_handling: data.note_handling || ""
+                note_handling:    data.note_handling    || ""
             })
 
             refreshBeacukaiStatus(data.blawb || data.mawb || data.hawb)
 
-            // If house type: fetch all siblings sharing same mawb
             const kind = getItemKind(currentItem)
             if (kind === 'house' && currentItem.mawb) {
                 const { data: sibs } = await supabase
@@ -427,7 +477,6 @@ export default function DetailPage() {
                     .neq('hawb', '')
                     .order('created_at')
                 setSiblings(sibs || [])
-                // default active tab = current record
                 setActiveTabId(currentItem.id)
             } else {
                 setSiblings([])
@@ -439,16 +488,14 @@ export default function DetailPage() {
 
     const handleXrayModalClose = () => {
         setXrayModal(m => ({ ...m, open: false }))
-        if (item) refreshBeacukaiStatus(item.blawb || item.mawb || item.hawb)
+        if (item) refreshBeacukaiStatus(activeSibling?.blawb || activeSibling?.mawb || activeSibling?.hawb)
     }
 
     const handleSave = async () => {
         if (!item || !user) return;
         setSaving(true);
-
         const { error } = await supabase.from("inspeksi_barang_v3")
             .update({ ...editData, updated_by: user.id }).eq("id", item.id);
-
         setSaving(false);
         if (!error) {
             await logActivity(user.id, "update", {
@@ -497,13 +544,20 @@ export default function DetailPage() {
     const itemKind = getItemKind(item)
     const isHouse  = itemKind === 'house'
 
-    // The active sibling (for house type tab navigation)
     const activeSibling = isHouse
         ? (siblings.find(s => s.id === activeTabId) || item)
         : item
 
-    // blawb to use for barang lookup = active tab's blawb
-    const activeBlawb = activeSibling.blawb || activeSibling.hawb || activeSibling.mawb
+    // blawb always resolves: hawb if present, else mawb
+    const activeBlawb   = activeSibling.blawb || activeSibling.hawb || activeSibling.mawb || ''
+    const activeNomorAju      = item.aju || gudang.aju || ''
+    const activeTanggalBlAwb  = item.tanggal_awb || gudang.tanggal_awb || ''
+    const activeKodeKantor    = item.kode_kantor || 'BANTEN'
+
+    // Filtered siblings for HAWB tab search
+    const filteredSiblings = hawbSearch.trim()
+        ? siblings.filter(s => s.hawb?.toLowerCase().includes(hawbSearch.toLowerCase()))
+        : siblings
 
     return (
         <div className="space-y-4">
@@ -576,7 +630,6 @@ export default function DetailPage() {
 
             {/* ── Kind Banner ── */}
             <div className={`rounded-lg border flex items-stretch overflow-hidden ${isHouse ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-200'}`}>
-                <div className={`w-1.5 shrink-0 ${isHouse ? 'bg-orange-500' : 'bg-blue-500'}`} />
                 <div className="flex-1 px-5 py-3.5 flex flex-wrap items-center gap-x-6 gap-y-2">
                     <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-bold tracking-widest uppercase ${
                         isHouse ? 'bg-orange-100 text-orange-800 border border-orange-300' : 'bg-blue-100 text-blue-800 border border-blue-300'
@@ -587,20 +640,15 @@ export default function DetailPage() {
                     <div className={`hidden sm:block w-px h-7 ${isHouse ? 'bg-orange-200' : 'bg-blue-200'}`} />
                     <div className="flex flex-col gap-0">
                         <span className={`text-xs font-semibold uppercase tracking-wider ${isHouse ? 'text-orange-400' : 'text-blue-400'}`}>
-                            {isHouse ? 'Master AWB' : 'Master Air Waybill'}
+                            Master Air Waybill
                         </span>
                         <span className={`text-xl font-bold tracking-tight ${isHouse ? 'text-orange-700' : 'text-blue-700'}`}>
                             {item.mawb || '—'}
                         </span>
                     </div>
-                    {isHouse && (
+                    {isHouse && siblings.length > 0 && (
                         <>
                             <div className="hidden sm:block w-px h-7 bg-orange-200" />
-                            {/*<div className="flex flex-col gap-0">*/}
-                            {/*    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">House AWB (aktif)</span>*/}
-                            {/*    <span className="text-base font-bold text-orange-600">{activeSibling.hawb || '—'}</span>*/}
-                            {/*</div>*/}
-                            {/*<div className="hidden sm:block w-px h-7 bg-orange-200" />*/}
                             <div className="flex flex-col gap-0">
                                 <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total House</span>
                                 <span className="text-base font-bold text-gray-600">{siblings.length} HAWB</span>
@@ -648,16 +696,16 @@ export default function DetailPage() {
                 </InfoCell>
                 <InfoCell label="STATUS" borderRight={false}>
                     <div className="flex flex-col gap-1.5 mt-8">
-                        <div className="px-2 py-0.5 bg-green-300 rounded-full inline-flex items-center gap-0.5">
+                        <div className="px-2 py-0.5 bg-green-100 rounded-full border border-green-400 inline-flex items-center gap-0.5">
                             <div className="w-3 h-3 bg-green-600 rounded-full shrink-0" />
-                            <span className="text-xs font-semibold text-green-600 whitespace-nowrap">Selesai diinspeksi</span>
+                            <span className="text-xs font-semibold text-green-700 whitespace-nowrap">Selesai diinspeksi</span>
                         </div>
                         <BeacukaiStatusBadge status={beacukaiStatus} />
                     </div>
                 </InfoCell>
             </div>
 
-            {/* ── Shared Info Row ── */}
+            {/* ── Shared Info — two columns ── */}
             <div className="flex flex-col lg:flex-row items-start gap-4">
                 {/* Shipment Info */}
                 <div className="w-full lg:flex-1 flex flex-col gap-4 min-w-0">
@@ -695,7 +743,7 @@ export default function DetailPage() {
                     </div>
                 </div>
 
-                {/* Right: Kode Kantor + Shipper PIC + Note */}
+                {/* Kode Kantor + Shipper PIC */}
                 <div className="w-full lg:flex-1 flex flex-col gap-4 min-w-0">
                     <div className="px-5 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2">
                         <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5">
@@ -738,40 +786,62 @@ export default function DetailPage() {
                             </div>
                         )}
                     </div>
-
-                    <div className="px-5 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2">
-                        <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5">
-                            <Package2 size={20} className="text-orange-500 shrink-0" />
-                            <span className="text-lg font-semibold text-gray-800">Note Handling</span>
-                        </div>
-                        {editing ? (
-                            <textarea
-                                className="h-24 px-3 py-2 bg-slate-100 border border-gray-300 rounded-lg text-sm text-gray-700 outline-none resize-none focus:border-blue-600"
-                                placeholder="Instruksi penanganan..."
-                                value={editData.note_handling}
-                                onChange={(e) => setEditData((d) => ({ ...d, note_handling: e.target.value }))}
-                            />
-                        ) : (
-                            <p className="text-sm leading-relaxed text-gray-600 p-0.5">
-                                {item.note_handling || <span className="text-gray-400 italic">-</span>}
-                            </p>
-                        )}
-                    </div>
                 </div>
             </div>
 
-            {/* ── Per-HAWB section (house only) — HAWB tab navbar + pieces + barang ── */}
+            {/* ── Note Handling — full width ── */}
+            <div className="px-5 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2">
+                <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5 border-b border-gray-200">
+                    <Package2 size={20} className="text-orange-500 shrink-0" />
+                    <span className="text-lg font-semibold text-gray-800">Note Handling</span>
+                </div>
+                {editing ? (
+                    <textarea
+                        className="h-24 px-3 py-2 bg-slate-100 border border-gray-300 rounded-lg text-sm text-gray-700 outline-none resize-none focus:border-blue-600"
+                        placeholder="Instruksi penanganan khusus (fragile, DG, perishable, dll)..."
+                        value={editData.note_handling}
+                        onChange={(e) => setEditData((d) => ({ ...d, note_handling: e.target.value }))}
+                    />
+                ) : (
+                    <p className="text-sm leading-relaxed text-gray-600 p-0.5">
+                        {item.note_handling || <span className="text-gray-400 italic">Tidak ada catatan penanganan khusus</span>}
+                    </p>
+                )}
+            </div>
+
+            {/* ── Per-HAWB section (house) or standalone barang ── */}
             {isHouse && siblings.length > 0 ? (
                 <div className="flex flex-col gap-0 bg-slate-100 rounded-lg border border-gray-300 overflow-hidden">
-                    {/* Tab header */}
-                    <div className="px-4 pt-4 pb-0 border-b border-gray-300 flex flex-col gap-2">
-                        <div className="flex items-center gap-2.5">
-                            <GitBranch size={18} className="text-orange-500 shrink-0" />
-                            <span className="text-lg font-semibold text-gray-800">Barang per House AWB</span>
+                    {/* Tab header with search */}
+                    <div className="px-4 pt-4 pb-0 border-b border-gray-300 flex flex-col gap-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-2.5">
+                                <GitBranch size={18} className="text-orange-500 shrink-0" />
+                                <span className="text-lg font-semibold text-gray-800">Barang per House AWB</span>
+                            </div>
+                            {/* HAWB search */}
+                            <div className="flex items-center gap-1.5 h-9 px-3 bg-white border border-gray-300 rounded-lg min-w-[180px] focus-within:border-orange-400 transition-colors">
+                                <Search size={14} className="text-gray-400 shrink-0" />
+                                <input
+                                    type="text"
+                                    placeholder="Cari HAWB..."
+                                    value={hawbSearch}
+                                    onChange={e => setHawbSearch(e.target.value)}
+                                    className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder-gray-400 min-w-0"
+                                />
+                                {hawbSearch && (
+                                    <button onClick={() => setHawbSearch('')} className="shrink-0 text-gray-400 hover:text-gray-600">
+                                        <X size={12} />
+                                    </button>
+                                )}
+                            </div>
                         </div>
+
                         {/* HAWB tab bar */}
                         <div className="flex items-end gap-0 overflow-x-auto">
-                            {siblings.map(sib => {
+                            {filteredSiblings.length === 0 ? (
+                                <p className="text-sm text-gray-400 italic pb-3 px-1">Tidak ada HAWB yang cocok</p>
+                            ) : filteredSiblings.map(sib => {
                                 const isActive = sib.id === activeTabId
                                 return (
                                     <button
@@ -779,26 +849,23 @@ export default function DetailPage() {
                                         onClick={() => setActiveTabId(sib.id)}
                                         className={`flex flex-col items-start px-4 py-2.5 border-b-2 transition-colors shrink-0 min-w-0 ${
                                             isActive
-                                                ? 'border-orange-500 bg-orange-50 text-orange-700'
-                                                : 'border-transparent hover:border-orange-200 hover:bg-orange-50/50 text-gray-500'
+                                                ? 'border-orange-500 bg-orange-50'
+                                                : 'border-transparent hover:border-orange-200 hover:bg-orange-50/50'
                                         }`}
                                     >
                                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">HAWB</span>
-                                        <span className={`text-sm font-bold truncate max-w-[120px] ${isActive ? 'text-orange-700' : 'text-gray-600'}`}>
+                                        <span className={`text-sm font-bold truncate max-w-[140px] ${isActive ? 'text-orange-700' : 'text-gray-600'}`}>
                                             {sib.hawb || '—'}
                                         </span>
-                                        {/*{sib.id === item.id && (*/}
-                                        {/*    <span className="text-[9px] text-orange-400 font-semibold">ini halaman ini</span>*/}
-                                        {/*)}*/}
                                     </button>
                                 )
                             })}
                         </div>
                     </div>
 
-                    {/* Active tab content: HAWB info strip + barang */}
+                    {/* Active tab content */}
                     <div className="p-4 flex flex-col gap-4">
-                        {/* HAWB + pieces strip */}
+                        {/* HAWB info strip */}
                         <div className="flex flex-wrap items-center gap-4 px-4 py-3 bg-orange-50 rounded-lg border border-orange-200">
                             <div className="flex flex-col gap-0">
                                 <span className="text-xs font-semibold uppercase tracking-wider text-orange-400">House AWB Aktif</span>
@@ -807,7 +874,7 @@ export default function DetailPage() {
                             <div className="w-px h-8 bg-orange-200 hidden sm:block" />
                             <div className="flex flex-col gap-0">
                                 <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">BLAWB</span>
-                                <span className="text-sm font-semibold text-gray-600">{activeSibling.blawb || activeSibling.hawb || '—'}</span>
+                                <span className="text-sm font-semibold text-gray-600">{activeBlawb || '—'}</span>
                             </div>
                             <div className="w-px h-8 bg-orange-200 hidden sm:block" />
                             <div className="flex flex-col gap-0">
@@ -818,11 +885,10 @@ export default function DetailPage() {
                             </div>
                         </div>
 
-                        {/* Barang section for active HAWB */}
+                        {/* Barang section — key forces remount on tab change */}
                         <BarangSection
-                            key={activeTabId}
+                            key={`barang-${activeTabId}`}
                             blawb={activeBlawb}
-                            itemId={activeSibling.id}
                             editing={editing}
                             fotoFiles={fotoFiles}
                             setFotoFile={setFotoFile}
@@ -831,10 +897,8 @@ export default function DetailPage() {
                     </div>
                 </div>
             ) : (
-                // Standalone: barang section directly
                 <BarangSection
                     blawb={activeBlawb}
-                    itemId={item.id}
                     editing={editing}
                     fotoFiles={fotoFiles}
                     setFotoFile={setFotoFile}
@@ -842,15 +906,15 @@ export default function DetailPage() {
                 />
             )}
 
+            {/* Modal — props are always derived from activeSibling so they update on tab switch */}
             <XraySubmitModal
                 open={xrayModal.open}
                 onClose={handleXrayModalClose}
                 mode={xrayModal.mode}
-                nomorAju={item.aju ?? gudang.aju ?? ''}
-                nomorBlAwb={item.blawb ?? item.mawb ?? item.hawb ?? ''}
-                tanggalBlAwb={item.tanggal_awb ?? editData.tanggal_awb ?? gudang.tanggal_awb ?? ''}
-                kodeKantor={item.kode_kantor ?? editData.kode_kantor ?? ''}
-                barangList={[]}
+                nomorAju={activeNomorAju}
+                nomorBlAwb={activeBlawb}
+                tanggalBlAwb={activeTanggalBlAwb}
+                kodeKantor={activeKodeKantor}
             />
         </div>
     );
