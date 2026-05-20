@@ -1,12 +1,13 @@
 // MOCKING API UNTUK NGAMBIL DATA DARI GUDANG
 // NGAMBIL DATA YANG MEMILIKI AWB YANG SAMA (MAWB/HAWB)
-// saat ini cuma ngambil data ke index berapa secara berurutan
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 export type GudangData = {
     id: string
-    aju: string
+    aju: string,
+    kode_kantor: string,
+    blawb: string,
     tanggal_awb: string | null
     airline_code: string | null
     ori_dest: string | null
@@ -18,6 +19,8 @@ export type GudangData = {
 const EMPTY_GUDANG: GudangData = {
     id: '',
     aju: 'FHAN26044069',
+    kode_kantor: 'BGD',
+    blawb: '',
     tanggal_awb: '2026-4-24',
     airline_code: 'GA',
     ori_dest: 'LAX-CGK',
@@ -38,7 +41,7 @@ async function fetchGudangRows(): Promise<GudangData[]> {
     cachePromise = (async () => {
         const { data, error } = await supabase
             .from('data_from_gudang')
-            .select('id, aju, tanggal_awb, airline_code, ori_dest, weight, shipper_pic_name, shipper_pic_number')
+            .select('id, aju, tanggal_awb, kode_kantor, blawb, airline_code, ori_dest, weight, shipper_pic_name, shipper_pic_number')
             .order('tanggal_awb', { ascending: true });
 
         if (error || !data) {
@@ -72,48 +75,45 @@ export function useGudangData() {
         })
     }, [])
 
-    const getByIndex = (index: number): GudangData => {
-        if (rows.length === 0) {
-            console.log('ini nih 0')
-            return EMPTY_GUDANG
-        }
-        return rows[index % rows.length]
+    /**
+     * Find a row whose blawb matches the given param (case-insensitive trim).
+     * Falls back to the first row with blawb === '' if no match found.
+     * Falls back to EMPTY_GUDANG if neither exists.
+     */
+    const getByBlawb = (blawb: string): GudangData => {
+        if (rows.length === 0) return EMPTY_GUDANG
+
+        const normalised = blawb.trim().toLowerCase()
+
+        const matched = rows.find(r => (r.blawb ?? '').trim().toLowerCase() === normalised)
+        if (matched) return matched
+
+        const emptyBlawb = rows.find(r => (r.blawb ?? '').trim() === '')
+        if (emptyBlawb) return emptyBlawb
+
+        return EMPTY_GUDANG
     }
 
-    const getForItem = (itemIndex: number): GudangData => {
-        return getByIndex(itemIndex)
-    }
-
-    return { rows, loading, getByIndex, getForItem, EMPTY_GUDANG }
+    return { rows, loading, getByBlawb, EMPTY_GUDANG }
 }
 
-// ─── Hook: get a single row for one specific inspeksi item ───────────────────
-// Fetches the item's order position automatically from the DB
-export function useGudangForItem(inspeksiId: string | undefined) {
-    const { rows, loading: gudangLoading, EMPTY_GUDANG } = useGudangData()
+export function useGudangForItem(blawb: string | undefined) {
+    const { rows, loading: gudangLoading, getByBlawb, EMPTY_GUDANG } = useGudangData()
     const [gudang, setGudang] = useState<GudangData>(EMPTY_GUDANG)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        if (!inspeksiId || gudangLoading) return
-        if (rows.length === 0) {
+        if (gudangLoading) return
+
+        if (!blawb || rows.length === 0) {
             setGudang(EMPTY_GUDANG)
             setLoading(false)
             return
         }
 
-        // Get stable index: position of this item in created_at order
-        supabase
-            .from('inspeksi_barang_v3')
-            .select('id')
-            .order('created_at', { ascending: true })
-            .then(({ data }) => {
-                const index = (data || []).findIndex(r => r.id === inspeksiId)
-                const safeIndex = index >= 0 ? index : 0
-                setGudang(rows[safeIndex % rows.length])
-                setLoading(false)
-            })
-    }, [inspeksiId, rows, gudangLoading])
+        setGudang(getByBlawb(blawb))
+        setLoading(false)
+    }, [blawb, rows, gudangLoading])
 
     return { gudang, loading }
 }

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Package, TrendingUp, Calendar, ChevronRight, ChevronLeft, Clock
+  Package, TrendingUp, Calendar, ChevronRight, Clock
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
+  Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
 import { format, subDays, startOfDay } from 'date-fns'
 import { id } from 'date-fns/locale'
@@ -23,19 +23,15 @@ type Stats = {
 }
 
 const PALETTE = ['#1e3a5f', '#f97316', '#2563eb', '#eab308', '#a855f7', '#ec4899', '#94a3b8']
-
 const ITEMS_PER_PAGE = 12
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [currentPage, setCurrentPage] = useState(1)
   const { profile } = useAuth()
-  const { getByIndex } = useGudangData()
+  const { getByBlawb } = useGudangData()
 
-  useEffect(() => {
-    fetchStats()
-  }, [])
+  useEffect(() => { fetchStats() }, [])
 
   const fetchStats = async () => {
     setLoading(true)
@@ -47,10 +43,7 @@ export default function DashboardPage() {
 
       if (error || !data) {
         console.error('Supabase error:', error)
-        setStats({
-          total: 0, today: 0, thisWeek: 0,
-          recentData: [], dailyTrend: [], airlineBreakdown: []
-        })
+        setStats({ total: 0, today: 0, thisWeek: 0, recentData: [], dailyTrend: [], airlineBreakdown: [] })
         return
       }
 
@@ -98,27 +91,17 @@ export default function DashboardPage() {
     return 'Selamat Malam'
   }
 
-  const RADIAN = Math.PI / 180;
-
+  const RADIAN = Math.PI / 180
   const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }) => {
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.6
+    const x = cx + radius * Math.cos(-midAngle * RADIAN)
+    const y = cy + radius * Math.sin(-midAngle * RADIAN)
     return (
-        <text
-            x={x}
-            y={y}
-            fill="white"
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={14}
-            fontWeight="normal"
-        >
+        <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight="normal">
           {value}
         </text>
-    );
-  };
+    )
+  }
 
   if (loading) return (
       <div className="flex items-center justify-center h-64">
@@ -129,33 +112,10 @@ export default function DashboardPage() {
       </div>
   )
 
-  const totalPages = Math.ceil((stats?.total ?? 0) / ITEMS_PER_PAGE)
-
   const statCards = [
-    {
-      label: 'Total Inspeksi',
-      value: stats?.total ?? 0,
-      icon: Package,
-      iconBg: 'bg-blue-200',
-      iconColor: 'text-blue-900',
-      sub: 'Total seluruh inspeksi',
-    },
-    {
-      label: 'Hari Ini',
-      value: stats?.today ?? 0,
-      icon: Calendar,
-      iconBg: 'bg-amber-100',
-      iconColor: 'text-orange-500',
-      sub: 'Jumlah inspeksi hari ini',
-    },
-    {
-      label: '7 Hari Terakhir',
-      value: stats?.thisWeek ?? 0,
-      icon: TrendingUp,
-      iconBg: 'bg-green-300',
-      iconColor: 'text-green-700',
-      sub: 'Jumlah inspeksi 7 hari terakhir',
-    },
+    { label: 'Total Inspeksi', value: stats?.total ?? 0, icon: Package, iconBg: 'bg-blue-200', iconColor: 'text-blue-900', sub: 'Total seluruh inspeksi' },
+    { label: 'Hari Ini', value: stats?.today ?? 0, icon: Calendar, iconBg: 'bg-amber-100', iconColor: 'text-orange-500', sub: 'Jumlah inspeksi hari ini' },
+    { label: '7 Hari Terakhir', value: stats?.thisWeek ?? 0, icon: TrendingUp, iconBg: 'bg-green-300', iconColor: 'text-green-700', sub: 'Jumlah inspeksi 7 hari terakhir' },
   ]
 
   return (
@@ -184,9 +144,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex-1 flex flex-col gap-0.5">
                     <div className="p-0.5 flex items-center">
-                  <span className="text-xl font-bold text-gray-800">
-                    {card.value.toLocaleString('id-ID')}
-                  </span>
+                      <span className="text-xl font-bold text-gray-800">{card.value.toLocaleString('id-ID')}</span>
                     </div>
                     <div className="p-0.5 flex items-center">
                       <span className="text-lg font-medium text-gray-500">{card.label}</span>
@@ -205,9 +163,7 @@ export default function DashboardPage() {
 
           {/* Trend Area Chart */}
           <div className="w-full px-6 py-5 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2.5">
-            <h3 className="text-xl font-semibold text-gray-600">
-              Tren Inspeksi 7 Hari kebelakang
-            </h3>
+            <h3 className="text-xl font-semibold text-gray-600">Tren Inspeksi 7 Hari kebelakang</h3>
             <ResponsiveContainer width="100%" height={320}>
               <AreaChart data={stats?.dailyTrend} margin={{ top: 8, right: 48, left: 24, bottom: 0 }}>
                 <defs>
@@ -217,39 +173,15 @@ export default function DashboardPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis
-                    dataKey="date"
-                    tick={{ fill: '#9ca3af', fontSize: 12, fontFamily: 'Inter' }}
-                    axisLine={false}
-                    tickLine={false}
-                />
-                <YAxis
-                    tick={{ fill: '#9ca3af', fontSize: 14, fontFamily: 'Inter' }}
-                    axisLine={false}
-                    tickLine={false}
-                    allowDecimals={false}
-                />
+                <XAxis dataKey="date" tick={{ fill: '#9ca3af', fontSize: 12, fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 14, fontFamily: 'Inter' }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      boxShadow: '0 4px 4px rgba(0,0,0,0.25)',
-                    }}
+                    contentStyle={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', boxShadow: '0 4px 4px rgba(0,0,0,0.25)' }}
                     labelStyle={{ color: '#4b5563' }}
                     itemStyle={{ color: '#1e3a5f' }}
                 />
-                <Area
-                    type="monotone"
-                    dataKey="count"
-                    stroke="#1e3a5f"
-                    strokeWidth={5}
-                    fill="url(#trendGradient)"
-                    dot={{ fill: '#1e3a5f', r: 5, stroke: '#e2e8f0', strokeWidth: 2 }}
-                    activeDot={{ r: 6 }}
-                    name="Inspeksi"
-                />
+                <Area type="monotone" dataKey="count" stroke="#1e3a5f" strokeWidth={5} fill="url(#trendGradient)"
+                      dot={{ fill: '#1e3a5f', r: 5, stroke: '#e2e8f0', strokeWidth: 2 }} activeDot={{ r: 6 }} name="Inspeksi" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -262,34 +194,16 @@ export default function DashboardPage() {
               </div>
               <ResponsiveContainer width={384} height={384}>
                 <PieChart>
-                  <Pie
-                      data={stats?.airlineBreakdown}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={0}
-                      outerRadius={140}
-                      dataKey="value"
-                      paddingAngle={0}
-                      label={renderCustomLabel}
-                      labelLine={false}
-                  >
+                  <Pie data={stats?.airlineBreakdown} cx="50%" cy="50%" innerRadius={0} outerRadius={140}
+                       dataKey="value" paddingAngle={0} label={renderCustomLabel} labelLine={false}>
                     {stats?.airlineBreakdown.map((entry, i) => (
                         <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
-
-                  <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                      }}
-                  />
+                  <Tooltip contentStyle={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            {/* Legend */}
             <div className="w-32 pt-20 pb-px flex flex-col gap-0.5">
               {stats?.airlineBreakdown.map(t => (
                   <div key={t.name} className="p-px flex items-center gap-1.5">
@@ -304,28 +218,23 @@ export default function DashboardPage() {
         {/* ── Recent Inspections Table ── */}
         <div className="w-full flex flex-col border border-gray-300 rounded-lg overflow-hidden">
 
-          {/* Table Header Bar */}
           <div className="h-16 px-4 bg-slate-100 border-b border-gray-300 flex justify-between items-center">
             <span className="text-xl font-semibold text-gray-600">Inspeksi Terbaru</span>
-            <Link
-                to="/data"
-                className="flex items-center gap-0.5 text-blue-900 font-medium hover:underline shrink-0"
-            >
+            <Link to="/data" className="flex items-center gap-0.5 text-blue-900 font-medium hover:underline shrink-0">
               <span className="text-base">Lihat Semua</span>
               <ChevronRight size={20} className="text-blue-900" />
             </Link>
           </div>
 
-          {/* Column Headers */}
           <div className="h-16 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2">
             {[
-              { label: 'NO. AJU',       flex: 'flex-[2] min-w-[100px]' },
-              { label: 'WAKTU MASUK',   flex: 'flex-[2] min-w-[120px]' },
-              { label: 'NO. MAWB',      flex: 'flex-[2] min-w-[80px]'  },
-              { label: 'NO. HAWB',      flex: 'flex-[2] min-w-[80px]'  },
-              { label: 'AIRLINE - RUTE',flex: 'flex-[2] min-w-[100px]' },
-              { label: 'PIECES',        flex: 'flex-1 min-w-[60px]'    },
-              { label: 'STATUS',        flex: 'flex-[1.5] min-w-[80px]'},
+              { label: 'NO. AJU',        flex: 'flex-[2] min-w-[100px]' },
+              { label: 'WAKTU MASUK',    flex: 'flex-[2] min-w-[120px]' },
+              { label: 'NO. MAWB',       flex: 'flex-[2] min-w-[80px]'  },
+              { label: 'NO. HAWB',       flex: 'flex-[2] min-w-[80px]'  },
+              { label: 'AIRLINE - RUTE', flex: 'flex-[2] min-w-[100px]' },
+              { label: 'PIECES',         flex: 'flex-1 min-w-[60px]'    },
+              { label: 'STATUS',         flex: 'flex-[1.5] min-w-[80px]'},
             ].map(col => (
                 <div key={col.label} className={`${col.flex} h-6 p-0.5 flex items-center`}>
                   <span className="text-base font-semibold text-gray-800 truncate">{col.label}</span>
@@ -333,26 +242,19 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Rows */}
-          {stats?.recentData.map((item, idx) => {
-            const gudang = getByIndex(idx)
+          {stats?.recentData.map((item) => {
+            const blawbKey = item.blawb || item.mawb || item.hawb || ''
+            const gudang = getByBlawb(blawbKey)
             return (
-                <div
-                    key={item.id}
-                    className="h-14 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2 hover:bg-gray-50 transition-colors"
-                >
+                <div key={item.id} className="h-14 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2 hover:bg-gray-50 transition-colors">
                   {/* NO AJU */}
                   <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-blue-900 truncate">{item.aju || '—'}</span>
+                    <span className="text-sm font-semibold text-blue-900 truncate">{gudang.aju || '—'}</span>
                   </div>
                   {/* WAKTU MASUK */}
                   <div className="flex-[2] min-w-[120px] min-w-0 flex items-center gap-1">
-          <span className="text-sm font-semibold text-gray-600 shrink-0">
-            {format(new Date(item.waktu_masuk), 'dd/MM/yyyy')}
-          </span>
-                    <span className="text-sm text-gray-600 shrink-0">
-            {format(new Date(item.waktu_masuk), 'HH:mm')}
-          </span>
+                    <span className="text-sm font-semibold text-gray-600 shrink-0">{format(new Date(item.waktu_masuk), 'dd/MM/yyyy')}</span>
+                    <span className="text-sm text-gray-600 shrink-0">{format(new Date(item.waktu_masuk), 'HH:mm')}</span>
                   </div>
                   {/* MAWB */}
                   <div className="flex-[2] min-w-[80px] min-w-0 flex items-center">
@@ -364,26 +266,22 @@ export default function DashboardPage() {
                   </div>
                   {/* AIRLINE - RUTE */}
                   <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
-          <span className="text-sm font-semibold text-gray-600 truncate">
-            {item.airline_code
-                ? `${item.airline_code} / ${item.ori_dest || '—'}`
-                : gudang
-                    ? `${gudang.airline_code} / ${gudang.ori_dest}`
-                    : '—'}
-          </span>
+                    <span className="text-sm font-semibold text-gray-600 truncate">
+                      {item.airline_code
+                          ? `${item.airline_code} / ${item.ori_dest || '—'}`
+                          : gudang
+                              ? `${gudang.airline_code} / ${gudang.ori_dest}`
+                              : '—'}
+                    </span>
                   </div>
                   {/* PIECES */}
                   <div className="flex-1 min-w-[60px] min-w-0 flex items-center gap-1">
-          <span className="text-sm font-semibold text-gray-600">
-            {item.jumlah_pieces ?? '—'}
-          </span>
-                    {item.jumlah_pieces != null && (
-                        <span className="text-sm text-gray-600 shrink-0">Pcs</span>
-                    )}
+                    <span className="text-sm font-semibold text-gray-600">{item.jumlah_pieces ?? '—'}</span>
+                    {item.jumlah_pieces != null && <span className="text-sm text-gray-600 shrink-0">Pcs</span>}
                   </div>
                   {/* STATUS */}
                   <div className="flex-[1.5] min-w-[80px] min-w-0 flex items-center">
-                    <div className="px-2 py-0.5 bg-green-300 rounded-full flex items-center gap-0.5 shadow-sm">
+                    <div className="px-2 py-0.5 bg-green-300 border border-green-400 rounded-full flex items-center gap-0.5 shadow-sm">
                       <div className="w-3 h-3 bg-green-600 rounded-full shrink-0" />
                       <span className="text-xs font-semibold text-green-600 whitespace-nowrap">Selesai</span>
                     </div>
@@ -393,9 +291,7 @@ export default function DashboardPage() {
           })}
 
           {!stats?.recentData.length && (
-              <div className="py-8 text-center text-sm text-gray-500 bg-slate-100">
-                Belum ada data inspeksi
-              </div>
+              <div className="py-8 text-center text-sm text-gray-500 bg-slate-100">Belum ada data inspeksi</div>
           )}
         </div>
       </div>

@@ -8,8 +8,6 @@ import { id } from 'date-fns/locale'
 import { supabase, InspeksiBarang } from '../../lib/supabase.ts'
 import { kirimFotoXray, addFotoXray, checkSubmissionExists } from '../../lib/beacukaiService.ts'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type ItemStatus = 'pending' | 'checking' | 'sending' | 'success' | 'skipped' | 'error'
 
 type BulkItem = {
@@ -18,6 +16,7 @@ type BulkItem = {
     imageUrls: string[]
     blawb: string
     tanggalAwb: string
+    nomorAju: string
     kodeKantor: string
     status: ItemStatus
     message: string | null
@@ -44,20 +43,18 @@ function StatusBadge({ status, message }: { status: ItemStatus; message: string 
     }
     const { bg, dot, text, label } = map[status]
     return (
-        <div className="flex flex-col items-start gap-0.5">
-            <div className={`px-2 py-0.5 ${bg} rounded-full flex justify-center items-center gap-0.5`}>
-                <div className="p-px flex items-center gap-2.5">
+        <div className="flex flex-col items-start gap-1 py-1">
+            <div className={`px-2 py-1 ${bg} rounded-full flex justify-center items-center gap-1`}>
+                <div className="flex items-center">
                     {(status === 'checking' || status === 'sending')
                         ? <Loader2 size={12} className={`${text} animate-spin`} />
-                        : <div className={`w-3 h-3 ${dot} rounded-full`} />
+                        : <div className={`w-2.5 h-2.5 ${dot} rounded-full`} />
                     }
                 </div>
-                <div className="h-6 p-0.5 flex items-center gap-2.5">
-                    <span className={`text-xs font-semibold ${text}`}>{label}</span>
-                </div>
+                <span className={`text-xs font-semibold ${text} leading-none`}>{label}</span>
             </div>
             {message && (
-                <p className="text-[10px] text-gray-400 max-w-[140px] leading-tight">{message}</p>
+                <p className="text-[10px] text-gray-400 max-w-[160px] leading-tight">{message}</p>
             )}
         </div>
     )
@@ -87,26 +84,53 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
 
     const loadItems = async () => {
         setLoading(true)
+
         const { data: inspeksiRows } = await supabase
             .from('inspeksi_barang_v3').select('*').in('id', selectedIds)
         if (!inspeksiRows) { setLoading(false); return }
 
         const mawbList = inspeksiRows.map(r => r.mawb).filter(Boolean)
         const hawbList = inspeksiRows.map(r => r.hawb).filter(Boolean)
-        const { data: allBarang } = await supabase.from('barang_v2').select('*')
-            .or([...mawbList.map(m => `mawb.eq.${m}`), ...hawbList.map(h => `hawb.eq.${h}`)].join(','))
+
+        const orConditions = [
+            ...mawbList.map(m => `mawb.eq.${m}`),
+            ...hawbList.map(h => `hawb.eq.${h}`),
+        ]
+
+        const { data: allBarang } = orConditions.length > 0
+            ? await supabase.from('barang_v2').select('*').or(orConditions.join(','))
+            : { data: [] }
 
         const built: BulkItem[] = inspeksiRows.map(inspeksi => {
-            const related   = (allBarang || []).filter(b =>
-                (inspeksi.mawb && b.mawb === inspeksi.mawb) || (inspeksi.hawb && b.hawb === inspeksi.hawb)
+            const related = (allBarang || []).filter(b =>
+                (inspeksi.mawb && b.mawb === inspeksi.mawb) ||
+                (inspeksi.hawb && b.hawb === inspeksi.hawb)
             )
-            const imageUrls = related.flatMap(b => [b.foto_url_atas, b.foto_url_samping]).filter(Boolean) as string[]
+
+            const imageUrls = related.flatMap(b =>
+                [b.foto_url_atas, b.foto_url_samping].filter(Boolean)
+            ) as string[]
+
+            const blawb = (inspeksi.hawb && inspeksi.hawb.trim() !== '')
+                ? inspeksi.hawb
+                : (inspeksi.mawb || '')
+
+            const firstBarang = related[0]
+            const nomorAju  = inspeksi.aju        || firstBarang?.aju        || 'FHAN26044069'
+            const kodeKantor = inspeksi.kode_kantor || firstBarang?.kode_kantor || 'BGD'
+            const tanggalAwb = inspeksi.tanggal_awb || firstBarang?.tanggal_awb || new Date().toISOString().split('T')[0]
+
             return {
-                inspeksi, barangCount: related.length, imageUrls,
-                blawb:      inspeksi.mawb || inspeksi.hawb || '',
-                tanggalAwb: inspeksi.tanggal_awb || '',
-                kodeKantor: inspeksi.kode_kantor || '',
-                status: 'pending' as ItemStatus, message: null, alreadyExists: false,
+                inspeksi,
+                barangCount: related.length,
+                imageUrls,
+                blawb,
+                tanggalAwb,
+                nomorAju,
+                kodeKantor,
+                status: 'pending' as ItemStatus,
+                message: null,
+                alreadyExists: false,
             }
         })
 
@@ -116,7 +140,13 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
             return { ...item, alreadyExists: exists }
         }))
 
-        setItems(checked)
+        const sorted = checked.sort((a, b) => {
+            const tA = a.inspeksi.waktu_masuk ? new Date(a.inspeksi.waktu_masuk).getTime() : 0
+            const tB = b.inspeksi.waktu_masuk ? new Date(b.inspeksi.waktu_masuk).getTime() : 0
+            return tB - tA
+        })
+
+        setItems(sorted)
         setLoading(false)
     }
 
@@ -127,26 +157,48 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
         setSending(true)
         for (let i = 0; i < items.length; i++) {
             const item = items[i]
-            if (item.imageUrls.length === 0) { updateItem(i, { status: 'error', message: 'Tidak ada foto tersedia' }); continue }
-            if (!item.blawb)                 { updateItem(i, { status: 'error', message: 'BL/AWB tidak ditemukan' });  continue }
+            if (item.imageUrls.length === 0) {
+                updateItem(i, { status: 'error', message: 'Tidak ada foto tersedia' })
+                continue
+            }
+            if (!item.blawb) {
+                updateItem(i, { status: 'error', message: 'BL/AWB tidak ditemukan' })
+                continue
+            }
 
             updateItem(i, { status: 'checking' })
+
             const files: File[] = []
             for (const url of item.imageUrls) {
                 try {
-                    const res = await fetch(url); const blob = await res.blob()
+                    const res = await fetch(url)
+                    const blob = await res.blob()
                     files.push(new File([blob], url.split('/').pop() || 'foto.jpg', { type: blob.type }))
-                } catch { /* skip */ }
+                } catch {
+                }
             }
-            if (files.length === 0) { updateItem(i, { status: 'error', message: 'Gagal mengambil foto' }); continue }
+            if (files.length === 0) {
+                updateItem(i, { status: 'error', message: 'Gagal mengambil foto' })
+                continue
+            }
 
             updateItem(i, { status: 'sending' })
-            const payload = { nomorAju: item.inspeksi.aju || '', nomorBlAwb: item.blawb, tanggalBlAwb: item.tanggalAwb, kodeKantor: item.kodeKantor, images: files }
-            const res = item.alreadyExists ? await addFotoXray(payload) : await kirimFotoXray(payload)
+
+            const payload = {
+                nomorAju:    item.nomorAju,
+                nomorBlAwb:  item.blawb,
+                tanggalBlAwb: item.tanggalAwb,
+                kodeKantor:  item.kodeKantor,
+                images: files,
+            }
+
+            const res = item.alreadyExists
+                ? await addFotoXray(payload)
+                : await kirimFotoXray(payload)
 
             if (res.success) {
                 updateItem(i, {
-                    status:  item.alreadyExists ? 'skipped' : 'success',
+                    status: item.alreadyExists ? 'skipped' : 'success',
                     message: item.alreadyExists
                         ? `Ditambahkan ke submission yang ada (${res.data?.jumlahFotoTerupload} foto)`
                         : `${res.data?.jumlahFotoTerupload} foto terkirim`,
@@ -169,7 +221,7 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
                 onClick={!sending ? onClose : undefined}
             />
 
-            {/* Modal — max-w caps it, w-full lets it shrink on small screens */}
+            {/* Modal */}
             <div className="relative w-full max-w-4xl p-5 bg-slate-100 rounded-2xl flex flex-col gap-4 shadow-2xl max-h-[90vh] overflow-hidden">
 
                 {/* ── Header ── */}
@@ -186,8 +238,8 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
                         )}
                     </div>
                     <span className="text-base font-normal text-gray-800">
-        {selectedIds.length} data inspeksi dipilih · {totalImages} total foto
-      </span>
+                        {selectedIds.length} data inspeksi dipilih · {totalImages} total foto
+                    </span>
                 </div>
 
                 {/* ── Body (scrollable) ── */}
@@ -218,23 +270,24 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
                             {/* Table */}
                             <div className="flex flex-col">
                                 {/* Column headers */}
-                                <div className="h-16 px-4 bg-slate-100 rounded-tl-lg rounded-tr-lg border border-gray-300 flex items-center gap-2">
-                                    <div className="flex-[2] min-w-[100px] h-6 p-0.5 flex items-center">
+                                <div className="h-16 px-4 bg-slate-100 rounded-tl-lg rounded-tr-lg border border-gray-300 flex items-center gap-3">
+                                    <div className="flex-[2] min-w-[100px] flex items-center">
                                         <span className="text-base font-semibold text-gray-800">NO. AJU</span>
                                     </div>
-                                    <div className="flex-[2] min-w-[100px] h-6 p-0.5 flex items-center">
+                                    <div className="flex-[2] min-w-[100px] flex items-center">
                                         <span className="text-base font-semibold text-gray-800">WAKTU MASUK</span>
                                     </div>
-                                    <div className="flex-[2] min-w-[90px] h-6 p-0.5 flex items-center">
+                                    <div className="flex-[2] min-w-[90px] flex items-center">
                                         <span className="text-base font-semibold text-gray-800">BL/AWB</span>
                                     </div>
-                                    <div className="flex-[2] min-w-[90px] h-6 p-0.5 flex items-center">
+                                    <div className="flex-[2] min-w-[90px] flex items-center">
                                         <span className="text-base font-semibold text-gray-800">KODE KANTOR</span>
                                     </div>
-                                    <div className="flex-1 min-w-[70px] h-6 p-0.5 flex items-center">
+                                    <div className="flex-1 min-w-[70px] flex items-center">
                                         <span className="text-base font-semibold text-gray-800">FOTO</span>
                                     </div>
-                                    <div className="flex-[2] min-w-[90px] h-6 p-0.5 flex items-center">
+                                    {/* FIX #4: wider status column so badge has room */}
+                                    <div className="flex-[2.5] min-w-[110px] flex items-center">
                                         <span className="text-base font-semibold text-gray-800">STATUS</span>
                                     </div>
                                 </div>
@@ -247,56 +300,62 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
                                             item.status === 'error'    ? 'bg-red-50'   :
                                                 item.status === 'sending' || item.status === 'checking' ? 'bg-blue-50' :
                                                     'bg-slate-100 hover:bg-gray-50'
+
                                     return (
                                         <div
                                             key={item.inspeksi.id}
-                                            className={`h-14 px-4 ${rowBg} border-l border-r border-b border-gray-300 flex items-center gap-2 transition-colors ${isLast ? 'rounded-bl-lg rounded-br-lg' : ''}`}
+                                            className={`min-h-[56px] py-2 px-4 ${rowBg} border-l border-r border-b border-gray-300 flex items-center gap-3 transition-colors ${isLast ? 'rounded-bl-lg rounded-br-lg' : ''}`}
                                         >
-                                            {/* NO. AJU */}
+                                            {/* NO. AJU — FIX #1: use nomorAju field */}
                                             <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-blue-900 truncate">
-                      {item.inspeksi.aju || '—'}
-                    </span>
+                                                <span className="text-sm font-semibold text-blue-900 truncate">
+                                                    {item.nomorAju || '—'}
+                                                </span>
                                             </div>
+
                                             {/* WAKTU MASUK */}
-                                            <div className="flex-[2] min-w-[100px] min-w-0 flex items-center gap-1">
-                    <span className="text-sm font-semibold text-gray-600 shrink-0">
-                      {item.inspeksi.waktu_masuk
-                          ? format(new Date(item.inspeksi.waktu_masuk), 'dd/MM/yyyy', { locale: id })
-                          : '—'}
-                    </span>
+                                            <div className="flex-[2] min-w-[100px] min-w-0 flex flex-wrap items-center gap-1">
+                                                <span className="text-sm font-semibold text-gray-600 shrink-0">
+                                                    {item.inspeksi.waktu_masuk
+                                                        ? format(new Date(item.inspeksi.waktu_masuk), 'dd/MM/yyyy', { locale: id })
+                                                        : '—'}
+                                                </span>
                                                 <span className="text-sm font-normal text-gray-600 shrink-0">
-                      {item.inspeksi.waktu_masuk
-                          ? format(new Date(item.inspeksi.waktu_masuk), 'HH:mm')
-                          : ''}
-                    </span>
+                                                    {item.inspeksi.waktu_masuk
+                                                        ? format(new Date(item.inspeksi.waktu_masuk), 'HH:mm')
+                                                        : ''}
+                                                </span>
                                             </div>
-                                            {/* BL/AWB */}
+
+                                            {/* BL/AWB — FIX #2: hawb-first */}
                                             <div className="flex-[2] min-w-[90px] min-w-0 flex items-center gap-1.5">
-                    <span className="text-sm font-semibold text-gray-600 truncate">
-                      {item.blawb || '—'}
-                    </span>
+                                                <span className="text-sm font-semibold text-gray-600 truncate">
+                                                    {item.blawb || '—'}
+                                                </span>
                                                 {item.alreadyExists && !done && (
                                                     <span className="text-[9px] text-amber-600 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full shrink-0">
-                        ada data
-                      </span>
+                                                        ada data
+                                                    </span>
                                                 )}
                                             </div>
-                                            {/* KODE KANTOR */}
+
+                                            {/* KODE KANTOR — FIX #1: use kodeKantor field */}
                                             <div className="flex-[2] min-w-[90px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-gray-600 truncate">
-                      {item.kodeKantor || <span className="italic text-gray-400">—</span>}
-                    </span>
+                                                <span className="text-sm font-semibold text-gray-600 truncate">
+                                                    {item.kodeKantor || <span className="italic text-gray-400">—</span>}
+                                                </span>
                                             </div>
+
                                             {/* FOTO */}
                                             <div className="flex-1 min-w-[70px] min-w-0 flex items-center gap-1">
                                                 <Image size={12} className="text-gray-400 shrink-0" />
                                                 <span className={`text-sm font-semibold truncate ${item.imageUrls.length === 0 ? 'text-gray-400 italic' : 'text-gray-600'}`}>
-                      {item.imageUrls.length === 0 ? 'Tidak ada' : `${item.imageUrls.length} Foto`}
-                    </span>
+                                                    {item.imageUrls.length === 0 ? 'Tidak ada' : `${item.imageUrls.length} Foto`}
+                                                </span>
                                             </div>
-                                            {/* STATUS */}
-                                            <div className="flex-[2] min-w-[90px] min-w-0 flex items-center">
+
+                                            {/* STATUS — FIX #4: wider column */}
+                                            <div className="flex-[2.5] min-w-[110px] min-w-0 flex items-center">
                                                 <StatusBadge status={item.status} message={item.message} />
                                             </div>
                                         </div>
@@ -309,8 +368,8 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
                                 <div className="px-4 py-3 bg-yellow-100 rounded-lg border border-amber-500 flex items-center gap-2">
                                     <AlertTriangle size={20} className="text-amber-500 shrink-0" />
                                     <span className="text-base font-normal text-amber-500">
-                {missingPhoto} Data tidak memiliki foto dan akan dilewati saat pengiriman
-              </span>
+                                        {missingPhoto} Data tidak memiliki foto dan akan dilewati saat pengiriman
+                                    </span>
                                 </div>
                             )}
 
@@ -352,10 +411,11 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
                         >
                             {sending
                                 ? <Loader2 size={18} className="text-slate-100 animate-spin shrink-0" />
-                                : <Send size={18} className="text-slate-100 shrink-0" />}
+                                : <Send size={18} className="text-slate-100 shrink-0" />
+                            }
                             <span className="text-base font-semibold text-slate-100 whitespace-nowrap">
-            {sending ? 'Mengirim...' : `Kirim ${readyCount} Data ke Bea Cukai`}
-          </span>
+                                {sending ? 'Mengirim...' : `Kirim ${readyCount} Data ke Bea Cukai`}
+                            </span>
                         </button>
                     )}
                     <button
@@ -363,9 +423,9 @@ export default function BulkXrayModal({ open, onClose, selectedIds, onDone }: Pr
                         disabled={sending}
                         className="flex-1 p-4 bg-slate-100 rounded-lg shadow-[2px_2px_12px_0px_rgba(0,0,0,0.12)] border border-red-600 flex justify-center items-center gap-2.5 hover:bg-red-50 transition-colors disabled:opacity-40"
                     >
-        <span className="text-base font-semibold text-red-600">
-          {done ? 'Tutup' : 'Batal'}
-        </span>
+                        <span className="text-base font-semibold text-red-600">
+                            {done ? 'Tutup' : 'Batal'}
+                        </span>
                     </button>
                 </div>
             </div>
