@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Package, TrendingUp, Calendar, ChevronRight, Clock
+  Package, TrendingUp, Calendar, ChevronRight, Trash2
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -12,6 +12,7 @@ import { id } from 'date-fns/locale'
 import { supabase, InspeksiBarang } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useGudangData } from '../hooks/useGudangData'
+import { clearAllInspectionData } from '../lib/clearAllData.ts'
 
 type Stats = {
   total: number
@@ -122,15 +123,26 @@ export default function DashboardPage() {
       <div className="space-y-4">
 
         {/* ── Greeting ── */}
-        <div className="flex items-end gap-16 h-16">
+        <div className="flex items-end justify-between gap-6 min-h-16">
+          {/* Left content */}
           <div className="flex flex-col justify-center gap-0.5">
             <h2 className="text-xl font-bold text-gray-600 drop-shadow-sm">
               {greeting()}, {profile?.full_name || profile?.email || 'Pengguna'} 👋
             </h2>
+
             <p className="text-sm text-gray-600 drop-shadow-sm">
               {format(new Date(), "EEEE, dd MMMM yyyy", { locale: id })} — Berikut ringkasan data inspeksi
             </p>
           </div>
+
+          {/* Right action */}
+          <button onClick={() => clearAllInspectionData({ setLoading, onSuccess: () => window.location.reload(), }) }
+              disabled={loading}
+              className="mr-4 h-11 px-5 rounded-xl bg-red-500 hover:bg-red-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
+                        text-white font-semibold text-sm shadow-lg shadow-red-500/20 transition-all duration-200 flex items-center gap-2">
+            <Trash2 size={16} />
+            {loading ? 'Menghapus...' : 'Clear Semua Data'}
+          </button>
         </div>
 
         {/* ── Stat Cards ── */}
