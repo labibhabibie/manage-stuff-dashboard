@@ -452,7 +452,7 @@ function BarangSection({ blawb, editing, fotoFiles, setFotoFile, clearFotoFile }
                                         <div key={side} className="flex-1 min-w-0 p-3 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-3">
                                             <div className="flex items-center gap-2">
                                                 <Image size={16} className="text-blue-900 shrink-0" />
-                                                <span className="text-sm font-semibold text-blue-900">{side === 'atas' ? 'Foto Depan' : 'Foto Samping'}</span>
+                                                <span className="text-sm font-semibold text-blue-900">{side === 'atas' ? 'Foto Atas' : 'Foto Samping'}</span>
                                             </div>
                                             {editing ? (
                                                 <div className="space-y-2">
