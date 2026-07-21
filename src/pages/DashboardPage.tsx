@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Package, TrendingUp, Calendar, ChevronRight, Trash2
+  Package, TrendingUp, Calendar, ChevronRight, Trash2, Clock
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -11,8 +11,17 @@ import { format, subDays, startOfDay } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { supabase, InspeksiBarang } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { useGudangData } from '../hooks/useGudangData'
 import { clearAllInspectionData } from '../lib/clearAllData.ts'
+
+type ItemKind = 'house' | 'master'
+
+function getItemKind(item: InspeksiBarang): ItemKind {
+  return item.hawb && item.hawb.trim() !== '' ? 'house' : 'master'
+}
+
+function getLastUpdated(item: InspeksiBarang): Date {
+  return new Date(item.updated_at || item.created_at)
+}
 
 type Stats = {
   total: number
@@ -20,17 +29,21 @@ type Stats = {
   thisWeek: number
   recentData: InspeksiBarang[]
   dailyTrend: { date: string; count: number }[]
-  airlineBreakdown: { name: string; value: number; color: string }[]
+  typeBreakdown: { name: string; value: number; color: string }[]
 }
 
-const PALETTE = ['#1e3a5f', '#f97316', '#2563eb', '#eab308', '#a855f7', '#ec4899', '#94a3b8']
+const TYPE_PALETTE = {
+  house:  '#f97316',
+  master: '#1e3a5f',
+}
+
 const ITEMS_PER_PAGE = 12
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [stats, setStats]               = useState<Stats | null>(null)
+  const [loading, setLoading]           = useState(true)
+  const [barangCountMap, setBarangCountMap] = useState<Record<string, number>>({})
   const { profile } = useAuth()
-  const { getByBlawb } = useGudangData()
 
   useEffect(() => { fetchStats() }, [])
 
@@ -40,27 +53,44 @@ export default function DashboardPage() {
       const { data, error } = await supabase
           .from('inspeksi_barang_v3')
           .select('*')
-          .order('created_at', { ascending: false })
+          .order('updated_at', { ascending: false, nullsFirst: false })
 
       if (error || !data) {
         console.error('Supabase error:', error)
-        setStats({ total: 0, today: 0, thisWeek: 0, recentData: [], dailyTrend: [], airlineBreakdown: [] })
+        setStats({ total: 0, today: 0, thisWeek: 0, recentData: [], dailyTrend: [], typeBreakdown: [] })
         return
       }
 
-      const now = new Date()
-      const todayStart = startOfDay(now)
-      const weekStart = subDays(now, 7)
+      // ── Fetch barang counts by blawb ──────────────────────────────────────
+      const blawbs = data.map(r => r.blawb).filter(Boolean)
+      if (blawbs.length > 0) {
+        const { data: barangCounts } = await supabase
+            .from('barang_v2').select('blawb, id').in('blawb', blawbs)
+        const map: Record<string, number> = {}
+        barangCounts?.forEach(b => { if (b.blawb) map[b.blawb] = (map[b.blawb] || 0) + 1 })
+        setBarangCountMap(map)
+      } else {
+        setBarangCountMap({})
+      }
 
-      const total = data.length
-      const today = data.filter(d => new Date(d.created_at) >= todayStart).length
+      const now        = new Date()
+      const todayStart = startOfDay(now)
+      const weekStart  = subDays(now, 7)
+
+      const total    = data.length
+      const today    = data.filter(d => new Date(d.created_at) >= todayStart).length
       const thisWeek = data.filter(d => new Date(d.created_at) >= weekStart).length
-      const recentData = data.slice(0, ITEMS_PER_PAGE)
+
+      // Sort by last updated for recent list
+      const sortedByUpdate = [...data].sort((a, b) =>
+          getLastUpdated(b).getTime() - getLastUpdated(a).getTime()
+      )
+      const recentData = sortedByUpdate.slice(0, ITEMS_PER_PAGE)
 
       const dailyTrend = Array.from({ length: 7 }, (_, i) => {
-        const day = subDays(now, 6 - i)
+        const day   = subDays(now, 6 - i)
         const start = startOfDay(day)
-        const end = startOfDay(subDays(now, 5 - i))
+        const end   = startOfDay(subDays(now, 5 - i))
         const count = data.filter(d => {
           const dt = new Date(d.created_at)
           return dt >= start && dt < end
@@ -68,17 +98,14 @@ export default function DashboardPage() {
         return { date: format(day, 'dd MMM', { locale: id }), count }
       })
 
-      const airlineMap: Record<string, number> = {}
-      data.forEach(d => {
-        const key = d.airline_code || 'Lainnya'
-        airlineMap[key] = (airlineMap[key] || 0) + 1
-      })
-      const airlineBreakdown = Object.entries(airlineMap)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 7)
-          .map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }))
+      const houseCount  = data.filter(d => getItemKind(d) === 'house').length
+      const masterCount = data.filter(d => getItemKind(d) === 'master').length
+      const typeBreakdown = [
+        { name: 'House',  value: houseCount,  color: TYPE_PALETTE.house  },
+        { name: 'Master', value: masterCount, color: TYPE_PALETTE.master },
+      ].filter(t => t.value > 0)
 
-      setStats({ total, today, thisWeek, recentData, dailyTrend, airlineBreakdown })
+      setStats({ total, today, thisWeek, recentData, dailyTrend, typeBreakdown })
     } finally {
       setLoading(false)
     }
@@ -114,9 +141,9 @@ export default function DashboardPage() {
   )
 
   const statCards = [
-    { label: 'Total Inspeksi', value: stats?.total ?? 0, icon: Package, iconBg: 'bg-blue-200', iconColor: 'text-blue-900', sub: 'Total seluruh inspeksi' },
-    { label: 'Hari Ini', value: stats?.today ?? 0, icon: Calendar, iconBg: 'bg-amber-100', iconColor: 'text-orange-500', sub: 'Jumlah inspeksi hari ini' },
-    { label: '7 Hari Terakhir', value: stats?.thisWeek ?? 0, icon: TrendingUp, iconBg: 'bg-green-300', iconColor: 'text-green-700', sub: 'Jumlah inspeksi 7 hari terakhir' },
+    { label: 'Total Inspeksi',  value: stats?.total    ?? 0, icon: Package,    iconBg: 'bg-blue-200',  iconColor: 'text-blue-900',   sub: 'Total seluruh inspeksi'          },
+    { label: 'Hari Ini',        value: stats?.today    ?? 0, icon: Calendar,   iconBg: 'bg-amber-100', iconColor: 'text-orange-500', sub: 'Jumlah inspeksi hari ini'        },
+    { label: '7 Hari Terakhir', value: stats?.thisWeek ?? 0, icon: TrendingUp, iconBg: 'bg-green-300', iconColor: 'text-green-700',  sub: 'Jumlah inspeksi 7 hari terakhir' },
   ]
 
   return (
@@ -124,22 +151,18 @@ export default function DashboardPage() {
 
         {/* ── Greeting ── */}
         <div className="flex items-end justify-between gap-6 min-h-16">
-          {/* Left content */}
           <div className="flex flex-col justify-center gap-0.5">
             <h2 className="text-xl font-bold text-gray-600 drop-shadow-sm">
               {greeting()}, {profile?.full_name || profile?.email || 'Pengguna'} 👋
             </h2>
-
             <p className="text-sm text-gray-600 drop-shadow-sm">
               {format(new Date(), "EEEE, dd MMMM yyyy", { locale: id })} — Berikut ringkasan data inspeksi
             </p>
           </div>
-
-          {/* Right action */}
-          <button onClick={() => clearAllInspectionData({ setLoading, onSuccess: () => window.location.reload(), }) }
+          <button
+              onClick={() => clearAllInspectionData({ setLoading, onSuccess: () => window.location.reload() })}
               disabled={loading}
-              className="mr-4 h-11 px-5 rounded-xl bg-red-500 hover:bg-red-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
-                        text-white font-semibold text-sm shadow-lg shadow-red-500/20 transition-all duration-200 flex items-center gap-2">
+              className="mr-4 h-11 px-5 rounded-xl bg-red-500 hover:bg-red-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-lg shadow-red-500/20 transition-all duration-200 flex items-center gap-2">
             <Trash2 size={16} />
             {loading ? 'Menghapus...' : 'Clear Semua Data'}
           </button>
@@ -180,7 +203,7 @@ export default function DashboardPage() {
               <AreaChart data={stats?.dailyTrend} margin={{ top: 8, right: 48, left: 24, bottom: 0 }}>
                 <defs>
                   <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#1e3a5f" stopOpacity={0.6} />
+                    <stop offset="5%"  stopColor="#1e3a5f" stopOpacity={0.6} />
                     <stop offset="95%" stopColor="#1e3a5f" stopOpacity={0.1} />
                   </linearGradient>
                 </defs>
@@ -198,17 +221,17 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* Airline Pie Chart */}
+          {/* Type Breakdown Pie Chart */}
           <div className="w-full p-4 bg-slate-100 rounded-lg border border-gray-300 flex items-start justify-center gap-4 relative">
             <div className="flex flex-col items-start">
               <div className="p-px mb-1 absolute top-4 left-8">
-                <span className="text-xl font-semibold text-gray-600">Distribusi Airline</span>
+                <span className="text-xl font-semibold text-gray-600">Distribusi Tipe Barang</span>
               </div>
               <ResponsiveContainer width={384} height={384}>
                 <PieChart>
-                  <Pie data={stats?.airlineBreakdown} cx="50%" cy="50%" innerRadius={0} outerRadius={140}
+                  <Pie data={stats?.typeBreakdown} cx="50%" cy="50%" innerRadius={0} outerRadius={140}
                        dataKey="value" paddingAngle={0} label={renderCustomLabel} labelLine={false}>
-                    {stats?.airlineBreakdown.map((entry, i) => (
+                    {stats?.typeBreakdown.map((entry, i) => (
                         <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
@@ -216,11 +239,14 @@ export default function DashboardPage() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="w-32 pt-20 pb-px flex flex-col gap-0.5">
-              {stats?.airlineBreakdown.map(t => (
-                  <div key={t.name} className="p-px flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: t.color }} />
-                    <span className="text-sm text-gray-600">{t.name}</span>
+            <div className="w-32 pt-20 pb-px flex flex-col gap-2">
+              {stats?.typeBreakdown.map(t => (
+                  <div key={t.name} className="p-px flex items-center gap-2">
+                    <div className="w-4 h-4 rounded shrink-0" style={{ backgroundColor: t.color }} />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold text-gray-700">{t.name}</span>
+                      <span className="text-xs text-gray-400">{t.value.toLocaleString('id-ID')} data</span>
+                    </div>
                   </div>
               ))}
             </div>
@@ -230,6 +256,7 @@ export default function DashboardPage() {
         {/* ── Recent Inspections Table ── */}
         <div className="w-full flex flex-col border border-gray-300 rounded-lg overflow-hidden">
 
+          {/* Table title */}
           <div className="h-16 px-4 bg-slate-100 border-b border-gray-300 flex justify-between items-center">
             <span className="text-xl font-semibold text-gray-600">Inspeksi Terbaru</span>
             <Link to="/data" className="flex items-center gap-0.5 text-blue-900 font-medium hover:underline shrink-0">
@@ -238,15 +265,18 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          <div className="h-16 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2">
+          {/* Column headers */}
+          <div className="h-14 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2">
+            <div className="w-[72px] shrink-0">
+              <span className="text-base font-semibold text-gray-800">TIPE</span>
+            </div>
             {[
-              { label: 'NO. AJU',        flex: 'flex-[2] min-w-[100px]' },
-              { label: 'WAKTU MASUK',    flex: 'flex-[2] min-w-[120px]' },
-              { label: 'NO. MAWB',       flex: 'flex-[2] min-w-[80px]'  },
-              { label: 'NO. HAWB',       flex: 'flex-[2] min-w-[80px]'  },
-              { label: 'AIRLINE - RUTE', flex: 'flex-[2] min-w-[100px]' },
-              { label: 'PIECES',         flex: 'flex-1 min-w-[60px]'    },
-              { label: 'STATUS',         flex: 'flex-[1.5] min-w-[80px]'},
+              { label: 'NO. MAWB',        flex: 'flex-[2] min-w-[80px]'  },
+              { label: 'NO. HAWB',        flex: 'flex-[2] min-w-[80px]'  },
+              { label: 'PIECES',          flex: 'flex-1 min-w-[50px]'    },
+              { label: 'WAKTU MASUK',     flex: 'flex-[2] min-w-[110px]' },
+              { label: 'TERAKHIR DIUBAH', flex: 'flex-[2] min-w-[110px]' },
+              { label: 'STATUS',          flex: 'flex-[1.5] min-w-[80px]'},
             ].map(col => (
                 <div key={col.label} className={`${col.flex} h-6 p-0.5 flex items-center`}>
                   <span className="text-base font-semibold text-gray-800 truncate">{col.label}</span>
@@ -254,55 +284,72 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {stats?.recentData.map((item) => {
-            const blawbKey = item.blawb || item.mawb || item.hawb || ''
-            const gudang = getByBlawb(blawbKey)
+          {/* Rows */}
+          {stats?.recentData.length ? stats.recentData.map((item) => {
+            const kind        = getItemKind(item)
+            const isHouse     = kind === 'house'
+            const lastUpdated = item.updated_at ? new Date(item.updated_at) : null
+            // Pieces: count from barang_v2 via blawb, same as DataPage
+            const pieces      = item.blawb ? barangCountMap[item.blawb] : undefined
+
             return (
-                <div key={item.id} className="h-14 px-4 bg-slate-100 border-b border-gray-300 flex items-center gap-2 hover:bg-gray-50 transition-colors">
-                  {/* NO AJU */}
-                  <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-blue-900 truncate">{gudang.aju || '—'}</span>
+                <Link key={item.id} to={`/data/${item.id}`}
+                      className={`min-h-[52px] px-4 border-b border-gray-300 flex items-center gap-2 transition-colors ${isHouse ? 'bg-slate-50 hover:bg-orange-50/60' : 'bg-slate-100 hover:bg-gray-50'}`}>
+
+                  {/* TIPE */}
+                  <div className="w-[72px] shrink-0 flex items-center">
+                    {isHouse
+                        ? <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-orange-100 text-orange-700 border border-orange-300">House</span>
+                        : <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-blue-100 text-blue-800 border border-blue-300">Master</span>
+                    }
                   </div>
-                  {/* WAKTU MASUK */}
-                  <div className="flex-[2] min-w-[120px] min-w-0 flex items-center gap-1">
-                    <span className="text-sm font-semibold text-gray-600 shrink-0">{format(new Date(item.waktu_masuk), 'dd/MM/yyyy')}</span>
-                    <span className="text-sm text-gray-600 shrink-0">{format(new Date(item.waktu_masuk), 'HH:mm')}</span>
+
+                  {/* NO. MAWB */}
+                  <div className="flex-[2] min-w-[80px] flex items-center">
+                    <span className="text-sm font-bold text-orange-600 truncate">{item.mawb || '—'}</span>
                   </div>
-                  {/* MAWB */}
-                  <div className="flex-[2] min-w-[80px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-gray-600 truncate">{item.mawb || '—'}</span>
-                  </div>
-                  {/* HAWB */}
-                  <div className="flex-[2] min-w-[80px] min-w-0 flex items-center">
+
+                  {/* NO. HAWB */}
+                  <div className="flex-[2] min-w-[80px] flex items-center">
                     <span className="text-sm font-semibold text-gray-600 truncate">{item.hawb || '—'}</span>
                   </div>
-                  {/* AIRLINE - RUTE */}
-                  <div className="flex-[2] min-w-[100px] min-w-0 flex items-center">
-                    <span className="text-sm font-semibold text-gray-600 truncate">
-                      {item.airline_code
-                          ? `${item.airline_code} / ${item.ori_dest || '—'}`
-                          : gudang
-                              ? `${gudang.airline_code} / ${gudang.ori_dest}`
-                              : '—'}
-                    </span>
-                  </div>
+
                   {/* PIECES */}
-                  <div className="flex-1 min-w-[60px] min-w-0 flex items-center gap-1">
-                    <span className="text-sm font-semibold text-gray-600">{item.jumlah_pieces ?? '—'}</span>
-                    {item.jumlah_pieces != null && <span className="text-sm text-gray-600 shrink-0">Pcs</span>}
+                  <div className="flex-1 min-w-[50px] flex items-center gap-1">
+                    {pieces != null
+                        ? <><span className="text-sm font-semibold text-gray-600">{pieces}</span><span className="text-sm text-gray-500 shrink-0">Pcs</span></>
+                        : <span className="text-sm text-gray-400">—</span>
+                    }
                   </div>
+
+                  {/* WAKTU MASUK */}
+                  <div className="flex-[2] min-w-[110px] flex flex-wrap items-center gap-1">
+                    <Clock size={12} className="text-gray-400 shrink-0" />
+                    <span className="text-sm font-semibold text-gray-600 shrink-0">{format(new Date(item.waktu_masuk), 'dd/MM/yyyy', { locale: id })}</span>
+                    <span className="text-sm text-gray-500 shrink-0">{format(new Date(item.waktu_masuk), 'HH:mm')}</span>
+                  </div>
+
+                  {/* TERAKHIR DIUBAH */}
+                  <div className="flex-[2] min-w-[110px] flex flex-wrap items-center gap-1">
+                    {lastUpdated ? (
+                        <>
+                          <Clock size={12} className="text-blue-400 shrink-0" />
+                          <span className="text-sm font-semibold text-gray-600 shrink-0">{format(lastUpdated, 'dd/MM/yyyy', { locale: id })}</span>
+                          <span className="text-sm text-gray-500 shrink-0">{format(lastUpdated, 'HH:mm')}</span>
+                        </>
+                    ) : <span className="text-sm text-gray-400">—</span>}
+                  </div>
+
                   {/* STATUS */}
-                  <div className="flex-[1.5] min-w-[80px] min-w-0 flex items-center">
-                    <div className="px-2 py-0.5 bg-green-300 border border-green-400 rounded-full flex items-center gap-0.5 shadow-sm">
-                      <div className="w-3 h-3 bg-green-600 rounded-full shrink-0" />
-                      <span className="text-xs font-semibold text-green-600 whitespace-nowrap">Selesai</span>
+                  <div className="flex-[1.5] min-w-[80px] flex items-center">
+                    <div className="px-2 py-0.5 bg-green-100 border border-green-400 rounded-full inline-flex items-center gap-0.5">
+                      <div className="w-2.5 h-2.5 bg-green-600 rounded-full shrink-0" />
+                      <span className="text-xs font-semibold text-green-700 whitespace-nowrap">Selesai</span>
                     </div>
                   </div>
-                </div>
+                </Link>
             )
-          })}
-
-          {!stats?.recentData.length && (
+          }) : (
               <div className="py-8 text-center text-sm text-gray-500 bg-slate-100">Belum ada data inspeksi</div>
           )}
         </div>

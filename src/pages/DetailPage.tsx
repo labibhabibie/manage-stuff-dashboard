@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import {
     ArrowLeft, Clock, Image, Edit2, Save, X, AlertTriangle,
     Loader2, CheckCircle2, Plane, Package2, Phone,
@@ -15,7 +15,6 @@ import XraySubmitModal from '../components/Modal/XraySubmitModal.tsx'
 import { checkSubmissionExists } from '../lib/beacukaiService.ts'
 
 const BARANG_PAGE_SIZE = 5
-// How many HAWB tabs to show per "page" in the tab strip
 const HAWB_TAB_PAGE_SIZE = 5
 
 type ItemKind = 'standalone' | 'house'
@@ -62,7 +61,7 @@ const MockFieldView = ({ label, value, mock }: { label: string; value?: string |
     </div>
 )
 
-// ─── Lightbox (with pinch-to-zoom / scroll-to-zoom / drag) ────────────────────
+// ─── Lightbox ────────────────────────────────────────────────────────────────
 
 function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
     const [scale, setScale]   = useState(1)
@@ -71,10 +70,8 @@ function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: ()
     const dragStart = useRef<{ mx: number; my: number; px: number; py: number } | null>(null)
     const imgRef    = useRef<HTMLImageElement>(null)
 
-    // Reset pan when zoom goes to 1
     useEffect(() => { if (scale <= 1) setPos({ x: 0, y: 0 }) }, [scale])
 
-    // Keyboard
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') onClose()
@@ -86,14 +83,12 @@ function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: ()
         return () => window.removeEventListener('keydown', onKey)
     }, [onClose])
 
-    // Scroll to zoom
     const onWheel = (e: React.WheelEvent) => {
         e.preventDefault()
         const delta = e.deltaY > 0 ? -0.15 : 0.15
         setScale(s => Math.min(5, Math.max(1, s + delta)))
     }
 
-    // Mouse drag
     const onMouseDown = (e: React.MouseEvent) => {
         if (scale <= 1) return
         e.preventDefault()
@@ -113,77 +108,31 @@ function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: ()
     return (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm p-4">
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 bg-white/10 backdrop-blur-md rounded-full border border-white/20"
-                onClick={(e) => e.stopPropagation()}  >
-                <button
-                    onClick={zoomOut}
-                    disabled={scale <= 1}
-                    className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20 disabled:opacity-30 transition-colors text-white"
-                >
+                 onClick={(e) => e.stopPropagation()}>
+                <button onClick={zoomOut} disabled={scale <= 1} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20 disabled:opacity-30 transition-colors text-white">
                     <ZoomOut size={16} />
                 </button>
-
-                <span className="text-xs font-semibold text-white/80 w-12 text-center">
-            {Math.round(scale * 100)}%
-        </span>
-
-                <button
-                    onClick={zoomIn}
-                    disabled={scale >= 5}
-                    className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20 disabled:opacity-30 transition-colors text-white"
-                >
+                <span className="text-xs font-semibold text-white/80 w-12 text-center">{Math.round(scale * 100)}%</span>
+                <button onClick={zoomIn} disabled={scale >= 5} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20 disabled:opacity-30 transition-colors text-white">
                     <ZoomIn size={16} />
                 </button>
-
                 <div className="w-px h-4 bg-white/20 mx-1" />
-
-                <button
-                    onClick={reset}
-                    className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors text-white"
-                >
+                <button onClick={reset} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors text-white">
                     <RotateCcw size={14} />
                 </button>
             </div>
-
-            <button
-                onClick={onClose}
-                className="absolute top-4 right-4 z-20 w-9 h-9 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 hover:bg-white/25 transition-colors"
-            >
+            <button onClick={onClose} className="absolute top-4 right-4 z-20 w-9 h-9 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 hover:bg-white/25 transition-colors">
                 <X size={16} className="text-white" />
             </button>
-
-            <div
-                className="relative w-full h-full flex items-center justify-center overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div
-                    className="relative w-full max-w-5xl h-[85vh] overflow-hidden flex items-center justify-center"
-                    onWheel={onWheel}
-                    onMouseDown={onMouseDown}
-                    onMouseMove={onMouseMove}
-                    onMouseUp={onMouseUp}
-                    onMouseLeave={onMouseUp}
-                    onClick={onClose}
-                >
-                    <img
-                        ref={imgRef}
-                        src={src}
-                        alt={alt}
-                        draggable={false}
-                        className="max-w-full max-h-full object-contain rounded-xl shadow-2xl select-none will-change-transform"
-                        style={{
-                            transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
-                            transition: dragging
-                                ? 'none'
-                                : 'transform 0.12s ease-out',
-                            transformOrigin: 'center center',
-                        }}
-                    />
+            <div className="relative w-full h-full flex items-center justify-center overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                <div className="relative w-full max-w-5xl h-[85vh] overflow-hidden flex items-center justify-center"
+                     onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onClick={onClose}>
+                    <img ref={imgRef} src={src} alt={alt} draggable={false}
+                         className="max-w-full max-h-full object-contain rounded-xl shadow-2xl select-none will-change-transform"
+                         style={{ transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`, transition: dragging ? 'none' : 'transform 0.12s ease-out', transformOrigin: 'center center' }} />
                 </div>
             </div>
-
-            <p className="mt-3 text-sm text-white/50 text-center px-4">
-                {alt} · Scroll to zoom · ESC to close
-            </p>
+            <p className="mt-3 text-sm text-white/50 text-center px-4">{alt} · Scroll to zoom · ESC to close</p>
         </div>
     )
 }
@@ -237,12 +186,10 @@ function BeacukaiStatusBadge({ status }: { status: 'loading' | 'sent' | 'unsent'
     )
 }
 
+// ─── HAWB Tab Strip ───────────────────────────────────────────────────────────
 
 function HawbTabStrip({
-                          siblings,
-                          activeTabId,
-                          hawbSearch,
-                          onTabSelect,
+                          siblings, activeTabId, hawbSearch, onTabSelect,
                       }: {
     siblings: InspeksiBarang[]
     activeTabId: string
@@ -255,19 +202,13 @@ function HawbTabStrip({
 
     const totalTabPages = Math.ceil(filtered.length / HAWB_TAB_PAGE_SIZE)
     const needsArrows   = filtered.length > HAWB_TAB_PAGE_SIZE
-
-    // Start on the page that contains the active tab
     const activeIndex   = filtered.findIndex(s => s.id === activeTabId)
     const initialPage   = activeIndex >= 0 ? Math.floor(activeIndex / HAWB_TAB_PAGE_SIZE) + 1 : 1
     const [tabPage, setTabPage] = useState(initialPage)
 
-    // Re-center when active tab changes
     useEffect(() => {
         const idx = filtered.findIndex(s => s.id === activeTabId)
-        if (idx >= 0) {
-            const page = Math.floor(idx / HAWB_TAB_PAGE_SIZE) + 1
-            setTabPage(page)
-        }
+        if (idx >= 0) setTabPage(Math.floor(idx / HAWB_TAB_PAGE_SIZE) + 1)
     }, [activeTabId, hawbSearch])
 
     const visibleSibs = filtered.slice((tabPage - 1) * HAWB_TAB_PAGE_SIZE, tabPage * HAWB_TAB_PAGE_SIZE)
@@ -278,58 +219,32 @@ function HawbTabStrip({
 
     return (
         <div className="flex items-end gap-0 w-full">
-            {/* Left arrow */}
             {needsArrows && (
-                <button
-                    onClick={() => setTabPage(p => Math.max(1, p - 1))}
-                    disabled={tabPage === 1}
-                    className="flex-shrink-0 self-stretch flex items-center justify-center w-8 border-b-2 border-transparent disabled:opacity-25 hover:bg-orange-50/70 transition-colors rounded-tl-md"
-                    aria-label="Halaman tab sebelumnya"
-                >
+                <button onClick={() => setTabPage(p => Math.max(1, p - 1))} disabled={tabPage === 1}
+                        className="flex-shrink-0 self-stretch flex items-center justify-center w-8 border-b-2 border-transparent disabled:opacity-25 hover:bg-orange-50/70 transition-colors rounded-tl-md" aria-label="Halaman tab sebelumnya">
                     <ChevronLeft size={16} className="text-orange-500" />
                 </button>
             )}
-
-            {/* Tabs */}
             <div className="flex items-end flex-1 min-w-0">
                 {visibleSibs.map(sib => {
                     const isActive = sib.id === activeTabId
                     return (
-                        <button
-                            key={sib.id}
-                            onClick={() => onTabSelect(sib.id)}
-                            className={`flex flex-col items-start px-4 py-2.5 border-b-2 transition-colors min-w-0 ${
-                                isActive
-                                    ? 'border-orange-500 bg-orange-50'
-                                    : 'border-transparent hover:border-orange-200 hover:bg-orange-50/50'
-                            }`}
-                        >
+                        <button key={sib.id} onClick={() => onTabSelect(sib.id)}
+                                className={`flex flex-col items-start px-4 py-2.5 border-b-2 transition-colors min-w-0 ${isActive ? 'border-orange-500 bg-orange-50' : 'border-transparent hover:border-orange-200 hover:bg-orange-50/50'}`}>
                             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">HAWB</span>
-                            <span className={`text-sm font-bold truncate w-full ${isActive ? 'text-orange-700' : 'text-gray-600'}`}>
-                                {sib.hawb || '—'}
-                            </span>
+                            <span className={`text-sm font-bold truncate w-full ${isActive ? 'text-orange-700' : 'text-gray-600'}`}>{sib.hawb || '—'}</span>
                         </button>
                     )
                 })}
             </div>
-
-            {/* Right arrow */}
             {needsArrows && (
-                <button
-                    onClick={() => setTabPage(p => Math.min(totalTabPages, p + 1))}
-                    disabled={tabPage === totalTabPages}
-                    className="flex-shrink-0 self-stretch flex items-center justify-center w-8 border-b-2 border-transparent disabled:opacity-25 hover:bg-orange-50/70 transition-colors rounded-tr-md"
-                    aria-label="Halaman tab berikutnya"
-                >
+                <button onClick={() => setTabPage(p => Math.min(totalTabPages, p + 1))} disabled={tabPage === totalTabPages}
+                        className="flex-shrink-0 self-stretch flex items-center justify-center w-8 border-b-2 border-transparent disabled:opacity-25 hover:bg-orange-50/70 transition-colors rounded-tr-md" aria-label="Halaman tab berikutnya">
                     <ChevronRight size={16} className="text-orange-500" />
                 </button>
             )}
-
-            {/* Page indicator — only when arrows are shown */}
             {needsArrows && (
-                <span className="flex-shrink-0 self-center ml-2 mb-1 text-xs font-medium text-gray-400">
-                    {tabPage}/{totalTabPages}
-                </span>
+                <span className="flex-shrink-0 self-center ml-2 mb-1 text-xs font-medium text-gray-400">{tabPage}/{totalTabPages}</span>
             )}
         </div>
     )
@@ -482,10 +397,8 @@ function BarangSection({ blawb, editing, fotoFiles, setFotoFile, clearFotoFile }
                                                     )}
                                                 </div>
                                             ) : url ? (
-                                                <button
-                                                    className="relative group/img w-full rounded-lg overflow-hidden border border-gray-200"
-                                                    onClick={() => setLightbox({ src: url, alt: `${selectedBarang.id_barang || 'Barang'} — ${side === 'atas' ? 'Depan' : 'Samping'}` })}
-                                                >
+                                                <button className="relative group/img w-full rounded-lg overflow-hidden border border-gray-200"
+                                                        onClick={() => setLightbox({ src: url, alt: `${selectedBarang.id_barang || 'Barang'} — ${side === 'atas' ? 'Depan' : 'Samping'}` })}>
                                                     <img src={url} className="w-full rounded-lg object-cover" alt={`foto ${side}`} />
                                                     <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors rounded-lg flex items-center justify-center gap-2">
                                                         <ZoomIn size={24} className="text-white opacity-0 group-hover/img:opacity-100 transition-opacity drop-shadow-lg" />
@@ -513,6 +426,12 @@ function BarangSection({ blawb, editing, fotoFiles, setFotoFile, clearFotoFile }
 
 export default function DetailPage() {
     const { id: recordId } = useParams<{ id: string }>();
+    const navigate         = useNavigate()
+    const location         = useLocation()
+
+    // Restore the DataPage state (page, filters, etc.) that was passed via navigation state
+    const dataPageState = (location.state as { dataPageState?: unknown })?.dataPageState
+
     const [item, setItem]               = useState<InspeksiBarang | null>(null);
     const [siblings, setSiblings]       = useState<InspeksiBarang[]>([])
     const [hawbSearch, setHawbSearch]   = useState('')
@@ -611,6 +530,11 @@ export default function DetailPage() {
         }
     };
 
+    // Navigate back to DataPage, restoring the previous state
+    const handleBack = () => {
+        navigate('/data', { state: { restoreState: dataPageState } })
+    }
+
     const handleFieldChange = (field: string, value: string) => setEditData((d) => ({ ...d, [field]: value }));
     const setFotoFile = (barangId: string, side: "atas" | "samping", file: File) =>
         setFotoFiles((prev) => ({ ...prev, [barangId]: { ...prev[barangId], [side]: file } }));
@@ -628,7 +552,7 @@ export default function DetailPage() {
         <div className="text-center py-20">
             <AlertTriangle size={40} className="text-amber-500 mx-auto mb-3" />
             <p className="text-gray-500">Data tidak ditemukan</p>
-            <Link to="/data" className="mt-4 inline-flex h-11 px-4 bg-slate-100 border border-gray-300 rounded-lg text-blue-900 font-semibold items-center gap-2 hover:bg-gray-50 transition-colors">Kembali</Link>
+            <button onClick={handleBack} className="mt-4 inline-flex h-11 px-4 bg-slate-100 border border-gray-300 rounded-lg text-blue-900 font-semibold items-center gap-2 hover:bg-gray-50 transition-colors">Kembali</button>
         </div>
     );
 
@@ -647,10 +571,10 @@ export default function DetailPage() {
             <div className="flex flex-wrap justify-between items-end gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="pl-0.5 pr-3 py-0.5 border-r border-gray-400 flex items-center gap-0.5 shrink-0">
-                        <Link to="/data" className="h-8 p-1.5 flex items-center justify-center gap-2.5">
+                        <button onClick={handleBack} className="h-8 p-1.5 flex items-center justify-center gap-2.5">
                             <ArrowLeft size={20} className="text-blue-900" />
                             <span className="text-base font-semibold text-blue-900">Kembali</span>
-                        </Link>
+                        </button>
                     </div>
                     <div className="flex flex-col justify-center gap-0.5 min-w-0">
                         <div className="flex flex-wrap items-center gap-2.5">
@@ -725,15 +649,6 @@ export default function DetailPage() {
                 <InfoCell label="NO. AJU">
                     <span className="text-base font-medium text-gray-800">{item.aju || gudang.aju || '—'}</span>
                 </InfoCell>
-                <InfoCell label="RUTE PENERBANGAN">
-                    <div className="flex flex-col gap-0.5 mt-4">
-                        <div className="flex items-center gap-2">
-                            <Plane size={18} className="text-orange-500 shrink-0" />
-                            <span className="text-lg font-semibold text-gray-800">{item.ori_dest || gudang.ori_dest || '—'}</span>
-                        </div>
-                        <span className="text-xs font-normal text-gray-600">Airline Code: {item.airline_code || gudang.airline_code || '—'}</span>
-                    </div>
-                </InfoCell>
                 <InfoCell label="WAKTU MASUK">
                     <div className="flex items-center gap-2">
                         <Clock size={18} className="text-orange-500 shrink-0" />
@@ -758,104 +673,48 @@ export default function DetailPage() {
             </div>
 
             {/* ── Shared Info ── */}
-            <div className="flex flex-col lg:flex-row items-start gap-4">
-                <div className="w-full lg:flex-1 flex flex-col gap-4 min-w-0">
-                    <div className="px-5 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2">
-                        <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5 border-b border-gray-200">
-                            <Plane size={20} className="text-orange-500 shrink-0" />
-                            <span className="text-lg font-semibold text-gray-800">Informasi Pengiriman</span>
-                            {isHouse && <span className="text-xs text-gray-400 italic">(sama untuk semua HAWB)</span>}
-                        </div>
-                        {editing ? (
-                            <div className="grid grid-cols-2 gap-4">
-                                <FieldEdit label="MAWB" field="mawb" value={editData.mawb} onChange={handleFieldChange} placeholder="Master Air Waybill" />
-                                <FieldEdit label="HAWB" field="hawb" value={editData.hawb} onChange={handleFieldChange} placeholder="House Air Waybill (opsional)" />
-                                <MockFieldView label="AIRLINE CODE" value={item.airline_code} mock={gudang.airline_code} />
-                                <MockFieldView label="ORI / DEST" value={item.ori_dest} mock={gudang.ori_dest} />
-                                <MockFieldView label="TOTAL BERAT" value={item.weight} mock={gudang.weight} />
-                                <FieldEdit label="TANGGAL AWB" field="tanggal_awb" type="date" value={editData.tanggal_awb} onChange={handleFieldChange} />
-                            </div>
-                        ) : (
-                            <div className="flex flex-col sm:flex-row items-start gap-4">
-                                <div className="flex-1 min-w-0 sm:border-r sm:border-gray-300 sm:pr-4 flex flex-col gap-4">
-                                    <div className="flex flex-col gap-0.5">
-                                        <span className="text-base font-semibold text-gray-500">MAWB</span>
-                                        <span className="text-lg font-bold text-orange-500">{item.mawb || '—'}</span>
-                                    </div>
-                                    <MockFieldView label="AIRLINE CODE" value={item.airline_code} mock={gudang.airline_code} />
-                                    <MockFieldView label="ORI / DEST" value={item.ori_dest} mock={gudang.ori_dest} />
-                                </div>
-                                <div className="flex-1 min-w-0 flex flex-col gap-4">
-                                    <MockFieldView label="TOTAL BERAT" value={item.weight ? `${item.weight} KG` : null} mock={gudang.weight ? `${gudang.weight} KG` : null} />
-                                    <MockFieldView label="TANGGAL AWB" value={item.tanggal_awb} mock={gudang.tanggal_awb} />
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="w-full lg:flex-1 flex flex-col gap-4 min-w-0">
-                    <div className="px-5 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2">
-                        <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5">
-                            <Building2 size={20} className="text-orange-500 shrink-0" />
-                            <span className="text-lg font-semibold text-gray-800">Kode Kantor</span>
-                        </div>
-                        {editing
-                            ? <FieldEdit label="" field="kode_kantor" value={editData.kode_kantor} onChange={handleFieldChange} placeholder="Kode kantor" />
-                            : <span className="text-lg font-semibold text-gray-500 p-0.5">{item.kode_kantor || 'BGD'}</span>}
-                    </div>
-                    <div className="px-5 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2">
-                        <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5">
-                            <User size={20} className="text-orange-500 shrink-0" />
-                            <span className="text-lg font-semibold text-gray-800">Shipper PIC</span>
-                        </div>
-                        {editing ? (
-                            <div className="grid grid-cols-2 gap-4">
-                                <FieldEdit label="NAMA PIC" field="shipper_pic_name" value={editData.shipper_pic_name} onChange={handleFieldChange} placeholder="Nama penanggung jawab" />
-                                <FieldEdit label="NOMOR PIC" field="shipper_pic_number" value={editData.shipper_pic_number} onChange={handleFieldChange} placeholder="No. HP / telepon" />
-                            </div>
-                        ) : (
-                            <div className="flex flex-col sm:flex-row items-start gap-4">
-                                <div className="flex-1 min-w-0 flex flex-col gap-0.5 p-0.5">
-                                    <span className="text-base font-semibold text-gray-500">NAMA PIC</span>
-                                    <span className="text-base font-semibold text-gray-800 truncate">{item.shipper_pic_name || gudang.shipper_pic_name || '—'}</span>
-                                </div>
-                                <div className="flex-1 min-w-0 flex flex-col gap-0.5 p-0.5">
-                                    <span className="text-base font-semibold text-gray-500">NOMOR PIC</span>
-                                    <div className="flex items-center gap-1.5">
-                                        <Phone size={18} className="text-orange-500 shrink-0" />
-                                        <span className="text-base font-semibold text-gray-800 truncate">{item.shipper_pic_number || gudang.shipper_pic_number || '—'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* ── Note Handling ── */}
             <div className="px-5 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2">
                 <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5 border-b border-gray-200">
-                    <Package2 size={20} className="text-orange-500 shrink-0" />
-                    <span className="text-lg font-semibold text-gray-800">Note Handling</span>
+                    <Plane size={20} className="text-orange-500 shrink-0" />
+                    <span className="text-lg font-semibold text-gray-800">Informasi Pengiriman</span>
+                    {isHouse && <span className="text-xs text-gray-400 italic">(sama untuk semua HAWB)</span>}
                 </div>
                 {editing ? (
-                    <textarea className="h-24 px-3 py-2 bg-slate-100 border border-gray-300 rounded-lg text-sm text-gray-700 outline-none resize-none focus:border-blue-600"
-                              placeholder="Instruksi penanganan khusus (fragile, DG, perishable, dll)..."
-                              value={editData.note_handling} onChange={(e) => setEditData((d) => ({ ...d, note_handling: e.target.value }))} />
+                    <div className="grid grid-cols-2 gap-4">
+                        <FieldEdit label="MAWB" field="mawb" value={editData.mawb} onChange={handleFieldChange} placeholder="Master Air Waybill" />
+                        <FieldEdit label="HAWB" field="hawb" value={editData.hawb} onChange={handleFieldChange} placeholder="House Air Waybill (opsional)" />
+                        <FieldEdit label="TANGGAL AWB" field="tanggal_awb" type="date" value={editData.tanggal_awb} onChange={handleFieldChange} />
+                    </div>
                 ) : (
-                    <p className="text-sm leading-relaxed text-gray-600 p-0.5">
-                        {item.note_handling || <span className="text-gray-400 italic">Tidak ada catatan penanganan khusus</span>}
-                    </p>
+                    <div className="flex flex-col sm:flex-row items-start gap-4">
+                        <div className="flex-1 min-w-0 sm:border-r sm:border-gray-300 sm:pr-4 flex flex-col gap-4">
+                            <div className="flex flex-col gap-0.5">
+                                <span className="text-base font-semibold text-gray-500">MAWB</span>
+                                <span className="text-lg font-bold text-orange-500">{item.mawb || '—'}</span>
+                            </div>
+                        </div>
+                        <div className="flex-1 min-w-0 flex flex-col gap-4">
+                            <MockFieldView label="TANGGAL AWB" value={item.tanggal_awb} mock={gudang.tanggal_awb} />
+                        </div>
+                    </div>
                 )}
+            </div>
+
+            {/* ── Kode Kantor ── */}
+            <div className="px-5 py-4 bg-slate-100 rounded-lg border border-gray-300 flex flex-col gap-2">
+                <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5">
+                    <Building2 size={20} className="text-orange-500 shrink-0" />
+                    <span className="text-lg font-semibold text-gray-800">Kode Kantor</span>
+                </div>
+                {editing
+                    ? <FieldEdit label="" field="kode_kantor" value={editData.kode_kantor} onChange={handleFieldChange} placeholder="Kode kantor" />
+                    : <span className="text-lg font-semibold text-gray-500 p-0.5">{item.kode_kantor || 'BGD'}</span>}
             </div>
 
             {/* ── Per-HAWB / standalone barang ── */}
             {isHouse && siblings.length > 0 ? (
                 <div className="flex flex-col gap-0 bg-slate-100 rounded-lg border border-gray-300 overflow-hidden">
-                    {/* ── Section header: title + search stacked ── */}
                     <div className="px-4 pt-4 pb-0 border-b border-gray-300 flex flex-col gap-3">
-                        {/* Row 1: title + total count */}
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                             <div className="flex items-center gap-2.5">
                                 <GitBranch size={18} className="text-orange-500 shrink-0" />
@@ -863,33 +722,19 @@ export default function DetailPage() {
                                 <span className="text-sm text-gray-400 font-normal">({siblings.length} HAWB)</span>
                             </div>
                         </div>
-
-                        {/* Row 2: search bar — full width, clearly under title */}
                         <div className="flex items-center gap-1.5 h-9 px-3 bg-white border border-gray-300 rounded-lg w-full max-w-xs focus-within:border-orange-400 transition-colors">
                             <Search size={14} className="text-gray-400 shrink-0" />
-                            <input
-                                type="text"
-                                placeholder="Cari HAWB..."
-                                value={hawbSearch}
-                                onChange={e => setHawbSearch(e.target.value)}
-                                className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder-gray-400 min-w-0"
-                            />
+                            <input type="text" placeholder="Cari HAWB..." value={hawbSearch}
+                                   onChange={e => setHawbSearch(e.target.value)}
+                                   className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder-gray-400 min-w-0" />
                             {hawbSearch && (
                                 <button onClick={() => setHawbSearch('')} className="shrink-0 text-gray-400 hover:text-gray-600">
                                     <X size={12} />
                                 </button>
                             )}
                         </div>
-
-                        {/* Row 3: HAWB tab strip with arrow navigation */}
-                        <HawbTabStrip
-                            siblings={siblings}
-                            activeTabId={activeTabId}
-                            hawbSearch={hawbSearch}
-                            onTabSelect={setActiveTabId}
-                        />
+                        <HawbTabStrip siblings={siblings} activeTabId={activeTabId} hawbSearch={hawbSearch} onTabSelect={setActiveTabId} />
                     </div>
-
                     <div className="p-4 flex flex-col gap-4">
                         <div className="flex flex-wrap items-center gap-4 px-4 py-3 bg-orange-50 rounded-lg border border-orange-200">
                             <div className="flex flex-col gap-0">
