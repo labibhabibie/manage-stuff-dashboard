@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
     Search, ChevronLeft, ChevronRight,
     Eye, Clock, Package,
-    RefreshCw, Download, SlidersHorizontal, Send, ChevronDown, ChevronUp
+    RefreshCw, Download, SlidersHorizontal, Send
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
@@ -40,7 +40,6 @@ export default function DataPage() {
     const [sortField, setSortField]           = useState<string>('updated_at')
     const [sortDir, setSortDir]               = useState<'asc' | 'desc'>('desc')
     const [bulkModal, setBulkModal]           = useState(false)
-    const [collapsed, setCollapsed]           = useState<Set<string>>(new Set())
     const { getByBlawb }                      = useGudangData()
 
     useEffect(() => { fetchData() }, [page, filters, sortField, sortDir])
@@ -110,37 +109,13 @@ export default function DataPage() {
         }
     }
 
-    // ── Build render list (groups + standalones) then paginate on that list ──
+    // ── Build render list (flat, no mawb-based grouping) then paginate on that list ──
 
-    type RenderEntry =
-        | { kind: 'standalone'; item: InspeksiBarang; sortKey: Date }
-        | { kind: 'group'; mawb: string; items: InspeksiBarang[]; resolvedOriDest: string; resolvedAirlineCode: string; sortKey: Date }
+    type RenderEntry = { item: InspeksiBarang; sortKey: Date }
 
     const buildRenderList = (): RenderEntry[] => {
-        const result: RenderEntry[] = []
-        const seenGroups = new Set<string>()
+        const result: RenderEntry[] = data.map(item => ({ item, sortKey: getLastUpdated(item) }))
 
-        data.forEach((item) => {
-            if (getItemKind(item) === 'standalone') {
-                result.push({ kind: 'standalone', item, sortKey: getLastUpdated(item) })
-            } else {
-                const mawb = item.mawb || item.id
-                if (!seenGroups.has(mawb)) {
-                    seenGroups.add(mawb)
-                    const groupItems = data.filter(d => getItemKind(d) === 'house' && (d.mawb || d.id) === mawb)
-                    const resolvedOriDest     = groupItems.find(d => d.ori_dest)?.ori_dest     || ''
-                    const resolvedAirlineCode = groupItems.find(d => d.airline_code)?.airline_code || ''
-                    // Group sort key = most recent updated_at among children
-                    const groupSortKey = groupItems.reduce<Date>((latest, d) => {
-                        const t = getLastUpdated(d)
-                        return t > latest ? t : latest
-                    }, new Date(0))
-                    result.push({ kind: 'group', mawb, items: groupItems, resolvedOriDest, resolvedAirlineCode, sortKey: groupSortKey })
-                }
-            }
-        })
-
-        // Sort the render list by sortKey
         result.sort((a, b) =>
             sortDir === 'desc' ? b.sortKey.getTime() - a.sortKey.getTime() : a.sortKey.getTime() - b.sortKey.getTime()
         )
@@ -152,16 +127,6 @@ export default function DataPage() {
     const totalEntries  = allRenderList.length
     const totalPages    = Math.max(1, Math.ceil(totalEntries / PAGE_SIZE))
     const renderList    = allRenderList.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
-    const toggleCollapse = (mawb: string, e: React.MouseEvent) => {
-        e.stopPropagation()
-        setCollapsed(prev => {
-            const next = new Set(prev)
-            if (next.has(mawb)) next.delete(mawb)
-            else next.add(mawb)
-            return next
-        })
-    }
 
     const resetFilters = () => { setFilters({ search: '', dateFrom: '', dateTo: '', typeFilter: 'all' }); setPage(1) }
     const setToday = () => {
@@ -208,7 +173,7 @@ export default function DataPage() {
 
         return (
             <div key={item.id} onClick={() => navigate(`/data/${item.id}`)}
-                 className={`min-h-[52px] pl-12 pr-4 border-l border-r border-b border-gray-300 flex flex-wrap items-center gap-2 transition-colors cursor-pointer ${isChecked ? 'bg-orange-50' : 'bg-slate-50 hover:bg-orange-50/60'}`}>
+                 className={`min-h-[56px] px-4 border-l border-r border-b border-gray-300 flex flex-wrap items-center gap-2 transition-colors cursor-pointer ${isChecked ? 'bg-orange-50' : 'bg-slate-50 hover:bg-orange-50/60'}`}>
                 <div className="shrink-0 flex items-center justify-center w-6">
                     <input type="checkbox" className="w-4 h-4 rounded-sm border-2 border-blue-900 accent-blue-900 cursor-pointer"
                            checked={isChecked} onClick={e => e.stopPropagation()}
@@ -218,7 +183,7 @@ export default function DataPage() {
                     <span className="shrink-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-orange-100 text-orange-700 border border-orange-300">House</span>
                 </div>
                 <div className="flex-[2] min-w-[80px] flex items-center">
-                    <span className="text-sm text-gray-400 break-all">{item.mawb}</span>
+                    <span className="text-sm text-gray-400 break-all">{item.mawb || '-'}</span>
                 </div>
                 <div className="flex-[2] min-w-[80px] flex items-center">
                     <span className="text-sm font-bold text-orange-600 break-all">{item.hawb}</span>
@@ -299,48 +264,6 @@ export default function DataPage() {
                         <Eye size={14} className="text-blue-600 shrink-0" />
                         <span className="text-xs font-medium text-blue-600">Detail</span>
                     </Link>
-                </div>
-            </div>
-        )
-    }
-
-    // ── Group accordion header ─────────────────────────────────────────────────
-    const renderGroupHeader = (mawb: string, items: InspeksiBarang[], groupSortKey: Date) => {
-        const isCollapsed = collapsed.has(mawb)
-        const totalPieces = items.reduce((sum, item) => sum + (item.blawb ? (barangCountMap[item.blawb] ?? 0) : 0), 0)
-
-        return (
-            <div className="min-h-[52px] px-4 border-l border-r border-b border-gray-300 bg-blue-50 flex flex-wrap items-center gap-2">
-                <div className="shrink-0 flex items-center justify-center w-6">
-                    <input type="checkbox" className="w-4 h-4 rounded-sm border-2 border-blue-900 accent-blue-900 cursor-pointer"
-                           checked={items.every(d => selected.includes(d.id))}
-                           onChange={e => {
-                               const ids = items.map(d => d.id)
-                               setSelected(prev => e.target.checked ? [...new Set([...prev, ...ids])] : prev.filter(i => !ids.includes(i)))
-                           }} />
-                </div>
-                <div className="w-[72px] shrink-0" />
-                <div className="flex-[2] min-w-[80px] flex items-center gap-2">
-                    <span className="text-sm font-bold text-orange-600 break-all">{mawb}</span>
-                </div>
-                <div className="flex-[2] min-w-[80px] flex items-center">
-                    <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-orange-100 border border-orange-300 text-orange-700 text-[11px] font-bold">{items.length} House</span>
-                </div>
-                <div className="flex-1 min-w-[50px] flex items-center gap-1">
-                    {totalPieces > 0 && (<><span className="text-sm font-semibold text-gray-600">{totalPieces}</span><span className="text-sm font-normal text-gray-500 shrink-0">Pcs</span></>)}
-                </div>
-                <div className="flex-[2] min-w-[110px]" />
-                <div className="flex-[2] min-w-[110px] flex flex-wrap items-center gap-1">
-                    <Clock size={12} className="text-blue-400 shrink-0" />
-                    <span className="text-sm font-semibold text-gray-600 shrink-0">{format(groupSortKey, 'dd/MM/yyyy', { locale: id })}</span>
-                    <span className="text-sm text-gray-500 shrink-0">{format(groupSortKey, 'HH:mm')}</span>
-                </div>
-                <div className="flex-[1.5] min-w-[70px] flex items-center">
-                    <button onClick={(e) => toggleCollapse(mawb, e)}
-                            className="h-6 px-1.5 py-0.5 bg-orange-500 rounded-md shadow-[2px_2px_10px_0px_rgba(0,0,0,0.20)] inline-flex items-center gap-0.5 hover:bg-orange-600 transition-colors shrink-0">
-                        {isCollapsed ? <ChevronDown size={13} className="text-white shrink-0" /> : <ChevronUp size={13} className="text-white shrink-0" />}
-                        <span className="text-xs font-semibold text-white whitespace-nowrap">{isCollapsed ? 'Lihat House' : 'Tutup'}</span>
-                    </button>
                 </div>
             </div>
         )
@@ -475,22 +398,9 @@ export default function DataPage() {
                         <Package size={32} className="text-gray-300 mx-auto mb-3" />
                         <p className="text-sm text-gray-400">Tidak ada data ditemukan</p>
                     </div>
-                ) : renderList.map((entry, i) => {
-                    if (entry.kind === 'standalone') {
-                        return renderStandaloneRow(entry.item)
-                    }
-                    const isCollapsed = collapsed.has(entry.mawb)
-                    return (
-                        <div key={`group-${entry.mawb}-${i}`} className="relative">
-                            {renderGroupHeader(entry.mawb, entry.items, entry.sortKey)}
-                            {!isCollapsed && (
-                                <div className="border-l-2 border-orange-200">
-                                    {entry.items.map(item => renderHouseRow(item))}
-                                </div>
-                            )}
-                        </div>
-                    )
-                })}
+                ) : renderList.map(entry =>
+                    getItemKind(entry.item) === 'standalone' ? renderStandaloneRow(entry.item) : renderHouseRow(entry.item)
+                )}
 
                 {/* Pagination Footer */}
                 <div className="h-16 px-4 bg-slate-100 rounded-bl-lg rounded-br-lg border border-t-0 border-gray-300 flex justify-between items-center gap-2">

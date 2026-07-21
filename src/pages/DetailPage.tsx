@@ -4,7 +4,7 @@ import {
     ArrowLeft, Clock, Image, Edit2, Save, X, AlertTriangle,
     Loader2, CheckCircle2, Plane, Package2, Phone,
     User, Send, Upload, Building2, ChevronLeft, ChevronRight, ChevronDown,
-    GitBranch, Layers, Search, ZoomIn, ZoomOut, RotateCcw,
+    GitBranch, Layers, ZoomIn, ZoomOut, RotateCcw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
@@ -15,7 +15,6 @@ import XraySubmitModal from '../components/Modal/XraySubmitModal.tsx'
 import { checkSubmissionExists } from '../lib/beacukaiService.ts'
 
 const BARANG_PAGE_SIZE = 5
-const HAWB_TAB_PAGE_SIZE = 5
 
 type ItemKind = 'standalone' | 'house'
 function getItemKind(item: InspeksiBarang): ItemKind {
@@ -182,70 +181,6 @@ function BeacukaiStatusBadge({ status }: { status: 'loading' | 'sent' | 'unsent'
         <div className="px-2 py-0.5 bg-amber-100 rounded-full border border-amber-400 inline-flex items-center gap-1 shrink-0">
             <div className="w-3 h-3 bg-amber-500 rounded-full shrink-0" />
             <span className="text-xs font-semibold text-amber-600 whitespace-nowrap">Belum kirim Beacukai</span>
-        </div>
-    )
-}
-
-// ─── HAWB Tab Strip ───────────────────────────────────────────────────────────
-
-function HawbTabStrip({
-                          siblings, activeTabId, hawbSearch, onTabSelect,
-                      }: {
-    siblings: InspeksiBarang[]
-    activeTabId: string
-    hawbSearch: string
-    onTabSelect: (id: string) => void
-}) {
-    const filtered = hawbSearch.trim()
-        ? siblings.filter(s => s.hawb?.toLowerCase().includes(hawbSearch.toLowerCase()))
-        : siblings
-
-    const totalTabPages = Math.ceil(filtered.length / HAWB_TAB_PAGE_SIZE)
-    const needsArrows   = filtered.length > HAWB_TAB_PAGE_SIZE
-    const activeIndex   = filtered.findIndex(s => s.id === activeTabId)
-    const initialPage   = activeIndex >= 0 ? Math.floor(activeIndex / HAWB_TAB_PAGE_SIZE) + 1 : 1
-    const [tabPage, setTabPage] = useState(initialPage)
-
-    useEffect(() => {
-        const idx = filtered.findIndex(s => s.id === activeTabId)
-        if (idx >= 0) setTabPage(Math.floor(idx / HAWB_TAB_PAGE_SIZE) + 1)
-    }, [activeTabId, hawbSearch])
-
-    const visibleSibs = filtered.slice((tabPage - 1) * HAWB_TAB_PAGE_SIZE, tabPage * HAWB_TAB_PAGE_SIZE)
-
-    if (filtered.length === 0) {
-        return <p className="text-sm text-gray-400 italic pb-3 px-1">Tidak ada HAWB yang cocok</p>
-    }
-
-    return (
-        <div className="flex items-end gap-0 w-full">
-            {needsArrows && (
-                <button onClick={() => setTabPage(p => Math.max(1, p - 1))} disabled={tabPage === 1}
-                        className="flex-shrink-0 self-stretch flex items-center justify-center w-8 border-b-2 border-transparent disabled:opacity-25 hover:bg-orange-50/70 transition-colors rounded-tl-md" aria-label="Halaman tab sebelumnya">
-                    <ChevronLeft size={16} className="text-orange-500" />
-                </button>
-            )}
-            <div className="flex items-end flex-1 min-w-0">
-                {visibleSibs.map(sib => {
-                    const isActive = sib.id === activeTabId
-                    return (
-                        <button key={sib.id} onClick={() => onTabSelect(sib.id)}
-                                className={`flex flex-col items-start px-4 py-2.5 border-b-2 transition-colors min-w-0 ${isActive ? 'border-orange-500 bg-orange-50' : 'border-transparent hover:border-orange-200 hover:bg-orange-50/50'}`}>
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">HAWB</span>
-                            <span className={`text-sm font-bold truncate w-full ${isActive ? 'text-orange-700' : 'text-gray-600'}`}>{sib.hawb || '—'}</span>
-                        </button>
-                    )
-                })}
-            </div>
-            {needsArrows && (
-                <button onClick={() => setTabPage(p => Math.min(totalTabPages, p + 1))} disabled={tabPage === totalTabPages}
-                        className="flex-shrink-0 self-stretch flex items-center justify-center w-8 border-b-2 border-transparent disabled:opacity-25 hover:bg-orange-50/70 transition-colors rounded-tr-md" aria-label="Halaman tab berikutnya">
-                    <ChevronRight size={16} className="text-orange-500" />
-                </button>
-            )}
-            {needsArrows && (
-                <span className="flex-shrink-0 self-center ml-2 mb-1 text-xs font-medium text-gray-400">{tabPage}/{totalTabPages}</span>
-            )}
         </div>
     )
 }
@@ -433,9 +368,6 @@ export default function DetailPage() {
     const dataPageState = (location.state as { dataPageState?: unknown })?.dataPageState
 
     const [item, setItem]               = useState<InspeksiBarang | null>(null);
-    const [siblings, setSiblings]       = useState<InspeksiBarang[]>([])
-    const [hawbSearch, setHawbSearch]   = useState('')
-    const [activeTabId, setActiveTabId] = useState<string>('')
     const [loading, setLoading]         = useState(true);
     const [editing, setEditing]         = useState(false);
     const [saving, setSaving]           = useState(false);
@@ -490,25 +422,13 @@ export default function DetailPage() {
             })
 
             refreshBeacukaiStatus(data.blawb || data.mawb || data.hawb)
-
-            const kind = getItemKind(currentItem)
-            if (kind === 'house' && currentItem.mawb) {
-                const { data: sibs } = await supabase
-                    .from('inspeksi_barang_v3').select('*').eq('mawb', currentItem.mawb)
-                    .not('hawb', 'is', null).neq('hawb', '').order('created_at')
-                setSiblings(sibs || [])
-                setActiveTabId(currentItem.id)
-            } else {
-                setSiblings([])
-                setActiveTabId(currentItem.id)
-            }
         }
         setLoading(false);
     };
 
     const handleXrayModalClose = () => {
         setXrayModal(m => ({ ...m, open: false }))
-        if (item) refreshBeacukaiStatus(activeSibling?.blawb || activeSibling?.mawb || activeSibling?.hawb)
+        if (item) refreshBeacukaiStatus(item.blawb || item.mawb || item.hawb)
     }
 
     const handleSave = async () => {
@@ -558,8 +478,7 @@ export default function DetailPage() {
 
     const itemKind = getItemKind(item)
     const isHouse  = itemKind === 'house'
-    const activeSibling = isHouse ? (siblings.find(s => s.id === activeTabId) || item) : item
-    const activeBlawb         = activeSibling.blawb || activeSibling.hawb || activeSibling.mawb || ''
+    const activeBlawb         = item.blawb || item.hawb || item.mawb || ''
     const activeNomorAju      = item.aju         || gudang.aju         || ''
     const activeTanggalBlAwb  = item.tanggal_awb || gudang.tanggal_awb || ''
     const activeKodeKantor    = item.kode_kantor || 'BGD'
@@ -629,18 +548,9 @@ export default function DetailPage() {
                     </div>
                     <div className={`hidden sm:block w-px h-7 ${isHouse ? 'bg-orange-200' : 'bg-blue-200'}`} />
                     <div className="flex flex-col gap-0">
-                        <span className={`text-xs font-semibold uppercase tracking-wider ${isHouse ? 'text-orange-400' : 'text-blue-400'}`}>Master Air Waybill</span>
-                        <span className={`text-xl font-bold tracking-tight ${isHouse ? 'text-orange-700' : 'text-blue-700'}`}>{item.mawb || '—'}</span>
+                        <span className={`text-xs font-semibold uppercase tracking-wider ${isHouse ? 'text-orange-400' : 'text-blue-400'}`}>{isHouse ? 'House Air Waybill' : 'Master Air Waybill'}</span>
+                        <span className={`text-xl font-bold tracking-tight ${isHouse ? 'text-orange-700' : 'text-blue-700'}`}>{item.mawb || item.hawb || '—'}</span>
                     </div>
-                    {isHouse && siblings.length > 0 && (
-                        <>
-                            <div className="hidden sm:block w-px h-7 bg-orange-200" />
-                            <div className="flex flex-col gap-0">
-                                <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total House</span>
-                                <span className="text-base font-bold text-gray-600">{siblings.length} HAWB</span>
-                            </div>
-                        </>
-                    )}
                 </div>
             </div>
 
@@ -677,7 +587,6 @@ export default function DetailPage() {
                 <div className="px-0.5 pt-0.5 pb-2 flex items-center gap-2.5 border-b border-gray-200">
                     <Plane size={20} className="text-orange-500 shrink-0" />
                     <span className="text-lg font-semibold text-gray-800">Informasi Pengiriman</span>
-                    {isHouse && <span className="text-xs text-gray-400 italic">(sama untuk semua HAWB)</span>}
                 </div>
                 {editing ? (
                     <div className="grid grid-cols-2 gap-4">
@@ -689,8 +598,8 @@ export default function DetailPage() {
                     <div className="flex flex-col sm:flex-row items-start gap-4">
                         <div className="flex-1 min-w-0 sm:border-r sm:border-gray-300 sm:pr-4 flex flex-col gap-4">
                             <div className="flex flex-col gap-0.5">
-                                <span className="text-base font-semibold text-gray-500">MAWB</span>
-                                <span className="text-lg font-bold text-orange-500">{item.mawb || '—'}</span>
+                                <span className="text-base font-semibold text-gray-500">{isHouse ? 'HAWB' : 'MAWB'}</span>
+                                <span className="text-lg font-bold text-orange-500">{item.mawb || item.hawb || '—'}</span>
                             </div>
                         </div>
                         <div className="flex-1 min-w-0 flex flex-col gap-4">
@@ -711,53 +620,8 @@ export default function DetailPage() {
                     : <span className="text-lg font-semibold text-gray-500 p-0.5">{item.kode_kantor || 'BGD'}</span>}
             </div>
 
-            {/* ── Per-HAWB / standalone barang ── */}
-            {isHouse && siblings.length > 0 ? (
-                <div className="flex flex-col gap-0 bg-slate-100 rounded-lg border border-gray-300 overflow-hidden">
-                    <div className="px-4 pt-4 pb-0 border-b border-gray-300 flex flex-col gap-3">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <div className="flex items-center gap-2.5">
-                                <GitBranch size={18} className="text-orange-500 shrink-0" />
-                                <span className="text-lg font-semibold text-gray-800">Barang per House AWB</span>
-                                <span className="text-sm text-gray-400 font-normal">({siblings.length} HAWB)</span>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 h-9 px-3 bg-white border border-gray-300 rounded-lg w-full max-w-xs focus-within:border-orange-400 transition-colors">
-                            <Search size={14} className="text-gray-400 shrink-0" />
-                            <input type="text" placeholder="Cari HAWB..." value={hawbSearch}
-                                   onChange={e => setHawbSearch(e.target.value)}
-                                   className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder-gray-400 min-w-0" />
-                            {hawbSearch && (
-                                <button onClick={() => setHawbSearch('')} className="shrink-0 text-gray-400 hover:text-gray-600">
-                                    <X size={12} />
-                                </button>
-                            )}
-                        </div>
-                        <HawbTabStrip siblings={siblings} activeTabId={activeTabId} hawbSearch={hawbSearch} onTabSelect={setActiveTabId} />
-                    </div>
-                    <div className="p-4 flex flex-col gap-4">
-                        <div className="flex flex-wrap items-center gap-4 px-4 py-3 bg-orange-50 rounded-lg border border-orange-200">
-                            <div className="flex flex-col gap-0">
-                                <span className="text-xs font-semibold uppercase tracking-wider text-orange-400">House AWB Aktif</span>
-                                <span className="text-base font-bold text-orange-700">{activeSibling.hawb || '—'}</span>
-                            </div>
-                            <div className="w-px h-8 bg-orange-200 hidden sm:block" />
-                            <div className="flex flex-col gap-0">
-                                <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">BLAWB</span>
-                                <span className="text-sm font-semibold text-gray-600">{activeBlawb || '—'}</span>
-                            </div>
-                            <div className="w-px h-8 bg-orange-200 hidden sm:block" />
-                            <div className="flex flex-col gap-0">
-                                <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Waktu Masuk</span>
-                                <span className="text-sm font-semibold text-gray-600">{format(new Date(activeSibling.waktu_masuk), 'dd MMM yyyy, HH:mm', { locale: id })}</span>
-                            </div>
-                        </div>
-                        <BarangSection key={`barang-${activeTabId}`} blawb={activeBlawb} editing={editing} fotoFiles={fotoFiles} setFotoFile={setFotoFile} clearFotoFile={clearFotoFile} />
-                    </div>
-                </div>
-            ) : (
-                <BarangSection blawb={activeBlawb} editing={editing} fotoFiles={fotoFiles} setFotoFile={setFotoFile} clearFotoFile={clearFotoFile} />
-            )}
+            {/* ── Barang ── */}
+            <BarangSection blawb={activeBlawb} editing={editing} fotoFiles={fotoFiles} setFotoFile={setFotoFile} clearFotoFile={clearFotoFile} />
 
             <XraySubmitModal open={xrayModal.open} onClose={handleXrayModalClose} mode={xrayModal.mode}
                              nomorAju={activeNomorAju} nomorBlAwb={activeBlawb} tanggalBlAwb={activeTanggalBlAwb} kodeKantor={activeKodeKantor} />
